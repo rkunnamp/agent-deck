@@ -7275,6 +7275,8 @@ func (h *Home) renderSessionList(width, height int) string {
 	if maxVisible < 1 {
 		maxVisible = 1
 	}
+	fastMode := time.Since(h.lastNavigationTime) < 180*time.Millisecond ||
+		(!h.lastAttachReturn.IsZero() && time.Since(h.lastAttachReturn) < 400*time.Millisecond)
 
 	// Show "more above" indicator if scrolled down
 	if h.viewOffset > 0 {
@@ -7285,7 +7287,11 @@ func (h *Home) renderSessionList(width, height int) string {
 
 	for i := h.viewOffset; i < len(h.flatItems) && visibleCount < maxVisible; i++ {
 		item := h.flatItems[i]
-		h.renderItem(&b, item, i == h.cursor, i)
+		if fastMode {
+			h.renderItemFast(&b, item, i == h.cursor)
+		} else {
+			h.renderItem(&b, item, i == h.cursor, i)
+		}
 		visibleCount++
 	}
 
@@ -7297,6 +7303,57 @@ func (h *Home) renderSessionList(width, height int) string {
 
 	// Height padding is handled by ensureExactHeight() in View() for consistency
 	return b.String()
+}
+
+// renderItemFast renders a minimal row used during rapid interaction bursts.
+// It avoids expensive per-row formatting and recursive group status aggregation.
+func (h *Home) renderItemFast(b *strings.Builder, item session.Item, selected bool) {
+	prefix := " "
+	if selected {
+		prefix = "▶"
+	}
+	switch item.Type {
+	case session.ItemTypeGroup:
+		indent := strings.Repeat(" ", max(0, item.Level))
+		icon := "▸"
+		if item.Group != nil && item.Group.Expanded {
+			icon = "▾"
+		}
+		name := "group"
+		if item.Group != nil {
+			name = item.Group.Name
+		}
+		b.WriteString(fmt.Sprintf("%s%s%s %s\n", prefix, indent, icon, name))
+	case session.ItemTypeSession:
+		indent := strings.Repeat(" ", max(0, item.Level))
+		inst := item.Session
+		if inst == nil {
+			b.WriteString(fmt.Sprintf("%s%s○ (session)\n", prefix, indent))
+			return
+		}
+		statusIcon := "○"
+		switch inst.GetStatusThreadSafe() {
+		case session.StatusRunning:
+			statusIcon = "●"
+		case session.StatusWaiting:
+			statusIcon = "◐"
+		case session.StatusError:
+			statusIcon = "✕"
+		}
+		b.WriteString(fmt.Sprintf("%s%s%s %s\n", prefix, indent, statusIcon, inst.Title))
+	case session.ItemTypeRemoteGroup:
+		name := item.RemoteName
+		if name == "" {
+			name = "remote"
+		}
+		b.WriteString(fmt.Sprintf("%s▾ remotes/%s\n", prefix, name))
+	case session.ItemTypeRemoteSession:
+		title := "remote-session"
+		if item.RemoteSession != nil && item.RemoteSession.Title != "" {
+			title = item.RemoteSession.Title
+		}
+		b.WriteString(fmt.Sprintf("%s  ○ %s\n", prefix, title))
+	}
 }
 
 // renderItem renders a single item (group or session) for the left panel
