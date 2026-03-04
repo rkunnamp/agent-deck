@@ -634,6 +634,12 @@ func NewHomeWithProfileAndMode(profile string) *Home {
 
 	// Control mode pipes: event-driven, zero-subprocess status detection
 	pm := tmux.NewPipeManager(h.ctx, outputCallback)
+
+	// Window change callback: refresh window cache immediately when tabs are added/closed
+	pm.SetWindowChangeCallback(func() {
+		tmux.RefreshSessionCache()
+	})
+
 	tmux.SetPipeManager(pm)
 
 	// Connect pipes for all existing running sessions in background
@@ -2991,6 +2997,11 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusUpdateMsg:
 		// Clear attach flag - we've returned from the attached session
 		h.isAttaching.Store(false) // Atomic store for thread safety
+
+		// Refresh window cache and rebuild flat items to reflect window changes
+		// (user may have opened/closed tmux windows while attached)
+		tmux.RefreshSessionCache()
+		h.rebuildFlatItems()
 
 		// Trigger status update on attach return to reflect current state
 		// Acknowledgment was already done on attach (if session was waiting),

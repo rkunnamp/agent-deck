@@ -28,6 +28,9 @@ type ControlPipe struct {
 	// Event channel: fires when the session produces output
 	outputEvents chan struct{}
 
+	// Event channel: fires when a window is added or closed
+	windowEvents chan struct{}
+
 	// Command/response serialization
 	cmdMu      sync.Mutex
 	responseCh chan commandResponse
@@ -81,6 +84,7 @@ func NewControlPipe(sessionName string) (*ControlPipe, error) {
 		stdin:        stdin,
 		stdout:       stdout,
 		outputEvents: make(chan struct{}, 64),
+		windowEvents: make(chan struct{}, 8),
 		responseCh:   make(chan commandResponse, 1),
 		ready:        make(chan struct{}),
 		alive:        true,
@@ -146,6 +150,12 @@ func (cp *ControlPipe) reader() {
 				// Non-blocking send to output events channel
 				select {
 				case cp.outputEvents <- struct{}{}:
+				default:
+				}
+			} else if strings.HasPrefix(raw, "%window-add") || strings.HasPrefix(raw, "%window-close") {
+				// Window created or closed — notify listeners
+				select {
+				case cp.windowEvents <- struct{}{}:
 				default:
 				}
 			} else if strings.HasPrefix(raw, "%begin ") {
@@ -258,6 +268,11 @@ func (cp *ControlPipe) CapturePaneVia() (string, error) {
 // Multiple rapid outputs may be coalesced into fewer channel sends.
 func (cp *ControlPipe) OutputEvents() <-chan struct{} {
 	return cp.outputEvents
+}
+
+// WindowEvents returns a channel that fires when a window is added or closed.
+func (cp *ControlPipe) WindowEvents() <-chan struct{} {
+	return cp.windowEvents
 }
 
 // LastOutputTime returns the time of the most recent %output event.

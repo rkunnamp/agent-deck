@@ -21,6 +21,9 @@ type PipeManager struct {
 	// Callback for output events (invoked when %output detected from a session)
 	onOutput func(sessionName string)
 
+	// Callback for window change events (invoked when %window-add or %window-close detected)
+	onWindowChange func()
+
 	// Reconnection tracking
 	reconnectMu  sync.Mutex
 	reconnecting map[string]bool
@@ -287,8 +290,14 @@ func (pm *PipeManager) Close() {
 	}
 }
 
-// forwardOutputEvents reads from a pipe's output events channel and calls
-// the onOutput callback. Runs until the pipe dies or context is cancelled.
+// SetWindowChangeCallback sets the callback for window add/close events.
+// Must be called before Connect to ensure all pipes forward events.
+func (pm *PipeManager) SetWindowChangeCallback(cb func()) {
+	pm.onWindowChange = cb
+}
+
+// forwardOutputEvents reads from a pipe's output and window events channels
+// and calls the appropriate callbacks. Runs until the pipe dies or context is cancelled.
 func (pm *PipeManager) forwardOutputEvents(sessionName string, pipe *ControlPipe) {
 	for {
 		select {
@@ -300,6 +309,13 @@ func (pm *PipeManager) forwardOutputEvents(sessionName string, pipe *ControlPipe
 			}
 			if pm.onOutput != nil {
 				pm.onOutput(sessionName)
+			}
+		case _, ok := <-pipe.WindowEvents():
+			if !ok {
+				return
+			}
+			if pm.onWindowChange != nil {
+				pm.onWindowChange()
 			}
 		case <-pipe.Done():
 			return
