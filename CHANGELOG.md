@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-03-07
+
+### Added
+- Add `internal/send` package consolidating all send verification functions (prompt detection, composer parsing, unsent-prompt checks) into a single location.
+- Add Codex readiness detection: `waitForAgentReady` and `sendMessageWhenReady` now gate on `codex>` prompt before delivering messages to Codex sessions.
+- Add session death detection in `--wait` mode: `waitForCompletion` detects 5 consecutive status errors and returns exit code 1 instead of hanging indefinitely.
+- Add heartbeat migration function (`MigrateConductorHeartbeatScripts`) that auto-refreshes installed scripts to the latest template.
+- Add exit 137 (SIGKILL) investigation report documenting root cause as Claude Code limitation with reproduction steps and mitigation strategies.
+- Add exit 137 mitigation guidance to shared conductor CLAUDE.md and GSD conductor SKILL.md.
+- Promote 27 validated conductor learnings to shared docs: 10 universal orchestration patterns to conductor CLAUDE.md, 6 GSD-specific learnings to gsd-conductor SKILL.md, 11 operational patterns to agent-deck-workflow SKILL.md.
+
+### Fixed
+- Harden Enter retry loop: retry every iteration for first 5 attempts (previously every 3rd), increasing ambiguous budget from 2 to 4.
+- Scope heartbeat scripts to conductor's own group instead of broadcasting to all sessions in the profile.
+- Honor `heartbeat_interval = 0` as disabled: skip heartbeat daemon installation during conductor setup.
+- Add enabled-status guard to heartbeat scripts so they exit silently when conductor is disabled.
+- Fix `-c` and `-g` flag co-parsing so both flags work together in `agent-deck add`.
+- Improve `--no-parent` help text to reference `set-parent` for later parent linking.
+
+### Changed
+- Clean up all six conductor LEARNINGS.md files: mark promoted entries, remove retired entries, consolidate duplicates.
+
 ## [0.23.0] - 2026-03-07
 
 ### Added
