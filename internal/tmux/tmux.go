@@ -1223,6 +1223,7 @@ func (s *Session) Start(command string) error {
 	// - set-clipboard on: Clipboard integration (Warp, iTerm2, kitty, etc.)
 	// - history-limit 10000: Large scrollback for AI agent output
 	// - escape-time 10: Fast Vim/editor responsiveness (default 500ms is too slow)
+	// - extended-keys on: Forward Shift+Enter and other modified keys to apps (tmux 3.2+)
 	// - terminal-features hyperlinks: Track hyperlinks like colors (tmux 3.4+, server-wide)
 	//
 	// Note: remain-on-exit is NOT set here — it is only enabled for sandbox sessions
@@ -1237,6 +1238,7 @@ func (s *Session) Start(command string) error {
 		"set-option", "-t", s.Name, "set-clipboard", "on", ";",
 		"set-option", "-t", s.Name, "history-limit", "10000", ";",
 		"set-option", "-t", s.Name, "escape-time", "10", ";",
+		"set", "-sq", "extended-keys", "on", ";",
 		"set", "-asq", "terminal-features", ",*:hyperlinks").Run()
 
 	// Apply user-specified tmux option overrides from config (after defaults).
@@ -1405,6 +1407,7 @@ func (s *Session) EnableMouseMode() error {
 	// Enhancements included:
 	// - set-clipboard on: OSC 52 clipboard integration (Warp, iTerm2, kitty, etc.)
 	// - allow-passthrough on: OSC 8 hyperlinks, advanced escape sequences (tmux 3.2+)
+	// - extended-keys on: Forward Shift+Enter and other modified keys to apps (tmux 3.2+)
 	// - terminal-features hyperlinks: Track hyperlinks like colors (tmux 3.4+)
 	// - history-limit 10000: Large scrollback for AI agent output
 	// - escape-time 10: Fast Vim/editor responsiveness (default 500ms is too slow)
@@ -1415,6 +1418,7 @@ func (s *Session) EnableMouseMode() error {
 		"set-option", "-t", s.Name, "-q", "allow-passthrough", "on", ";",
 		"set-option", "-t", s.Name, "history-limit", "10000", ";",
 		"set-option", "-t", s.Name, "escape-time", "10", ";",
+		"set", "-sq", "extended-keys", "on", ";",
 		"set", "-asq", "terminal-features", ",*:hyperlinks")
 	// Ignore errors - all these are non-fatal enhancements
 	// Older tmux versions may not support some options
