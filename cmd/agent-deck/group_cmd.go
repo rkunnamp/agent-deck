@@ -28,6 +28,8 @@ func handleGroup(profile string, args []string) {
 		handleGroupDelete(profile, args[1:])
 	case "move", "mv":
 		handleGroupMove(profile, args[1:])
+	case "reorder", "sort":
+		handleGroupReorder(profile, args[1:])
 	case "help", "--help", "-h":
 		printGroupHelp()
 		return
@@ -49,6 +51,7 @@ func printGroupHelp() {
 	fmt.Println("  update <name>     Update group settings")
 	fmt.Println("  delete <name>     Delete a group")
 	fmt.Println("  move <id> <group> Move session to a different group")
+	fmt.Println("  reorder <name>    Reorder a group (--up, --down, --position N)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  agent-deck group list")
@@ -59,6 +62,9 @@ func printGroupHelp() {
 	fmt.Println("  agent-deck group delete work --force")
 	fmt.Println("  agent-deck group move my-project work/frontend")
 	fmt.Println("  agent-deck group move my-project \"\"          # Move to root")
+	fmt.Println("  agent-deck group reorder mobile --up")
+	fmt.Println("  agent-deck group reorder mobile --down")
+	fmt.Println("  agent-deck group reorder mobile --position 0")
 }
 
 // handleGroupList lists all groups with session counts and status
@@ -745,6 +751,189 @@ func handleGroupMove(profile string, args []string) {
 	})
 }
 
+// handleGroupReorder changes a group's position among its siblings
+func handleGroupReorder(profile string, args []string) {
+	fs := flag.NewFlagSet("group reorder", flag.ExitOnError)
+	up := fs.Bool("up", false, "Move group up one position")
+	upShort := fs.Bool("u", false, "Move group up one position (short)")
+	down := fs.Bool("down", false, "Move group down one position")
+	downShort := fs.Bool("d", false, "Move group down one position (short)")
+	position := fs.Int("position", -1, "Move group to specific position (0-indexed)")
+	positionShort := fs.Int("p", -1, "Move group to specific position (short)")
+	jsonOutput := fs.Bool("json", false, "Output as JSON")
+	quiet := fs.Bool("quiet", false, "Minimal output")
+	quietShort := fs.Bool("q", false, "Minimal output (short)")
+
+	fs.Usage = func() {
+		fmt.Println("Usage: agent-deck group reorder <name> [options]")
+		fmt.Println()
+		fmt.Println("Reorder a group among its siblings.")
+		fmt.Println()
+		fmt.Println("Options:")
+		fs.PrintDefaults()
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  agent-deck group reorder mobile --up")
+		fmt.Println("  agent-deck group reorder mobile --down")
+		fmt.Println("  agent-deck group reorder mobile --position 0")
+	}
+
+	args = reorderGroupArgs(args)
+
+	if err := fs.Parse(normalizeArgs(fs, args)); err != nil {
+		os.Exit(1)
+	}
+
+	out := NewCLIOutput(*jsonOutput, *quiet || *quietShort)
+
+	name := fs.Arg(0)
+	if name == "" {
+		out.Error("group name is required", ErrCodeNotFound)
+		fmt.Println("Usage: agent-deck group reorder <name> [--up|--down|--position N]")
+		os.Exit(1)
+	}
+
+	moveUp := *up || *upShort
+	moveDown := *down || *downShort
+	posSet := *position >= 0
+	posShortSet := *positionShort >= 0
+	if posSet && posShortSet {
+		out.Error("specify only one of --position or -p", ErrCodeInvalidOperation)
+		os.Exit(1)
+	}
+	pos := *position
+	if posShortSet {
+		pos = *positionShort
+	}
+
+	// Validate: exactly one direction
+	dirCount := 0
+	if moveUp {
+		dirCount++
+	}
+	if moveDown {
+		dirCount++
+	}
+	if pos >= 0 {
+		dirCount++
+	}
+	if dirCount == 0 {
+		out.Error("specify one of --up, --down, or --position", ErrCodeInvalidOperation)
+		os.Exit(1)
+	}
+	if dirCount > 1 {
+		out.Error("specify only one of --up, --down, or --position", ErrCodeInvalidOperation)
+		os.Exit(1)
+	}
+
+	// Load storage
+	storage, err := session.NewStorageWithProfile(profile)
+	if err != nil {
+		out.Error(fmt.Sprintf("failed to initialize storage: %v", err), ErrCodeNotFound)
+		os.Exit(1)
+	}
+
+	instances, groups, err := storage.LoadWithGroups()
+	if err != nil {
+		out.Error(fmt.Sprintf("failed to load sessions: %v", err), ErrCodeNotFound)
+		os.Exit(1)
+	}
+
+	groupTree := session.NewGroupTreeWithGroups(instances, groups)
+
+	// Find group by path or name
+	groupPath := normalizeGroupPath(name)
+	_, exists := groupTree.Groups[groupPath]
+	if !exists {
+		for path, g := range groupTree.Groups {
+			if strings.EqualFold(g.Name, name) {
+				groupPath = path
+				exists = true
+				break
+			}
+		}
+	}
+	if !exists {
+		out.Error(fmt.Sprintf("group '%s' not found", name), ErrCodeNotFound)
+		os.Exit(2)
+	}
+
+	// Compute current sibling position
+	siblingIndex, siblings := groupSiblingPosition(groupTree, groupPath)
+
+	fromPos := siblingIndex
+
+	if moveUp {
+		groupTree.MoveGroupUp(groupPath)
+	} else if moveDown {
+		groupTree.MoveGroupDown(groupPath)
+	} else {
+		// --position: move to target position among siblings
+		targetPos := pos
+		if targetPos >= len(siblings) {
+			targetPos = len(siblings) - 1
+		}
+		if targetPos < 0 {
+			targetPos = 0
+		}
+		// Re-check position after each move to handle interleaved children
+		for {
+			cur, _ := groupSiblingPosition(groupTree, groupPath)
+			if cur == targetPos {
+				break
+			}
+			if cur > targetPos {
+				groupTree.MoveGroupUp(groupPath)
+			} else {
+				groupTree.MoveGroupDown(groupPath)
+			}
+			// Detect no-op to avoid infinite loop (e.g., blocked by non-sibling)
+			newCur, _ := groupSiblingPosition(groupTree, groupPath)
+			if newCur == cur {
+				break
+			}
+		}
+	}
+
+	// Compute new position
+	toPos, _ := groupSiblingPosition(groupTree, groupPath)
+
+	// Save
+	if err := storage.SaveWithGroups(groupTree.GetAllInstances(), groupTree); err != nil {
+		out.Error(fmt.Sprintf("failed to save: %v", err), ErrCodeNotFound)
+		os.Exit(1)
+	}
+
+	out.Success(fmt.Sprintf("Reordered group '%s': position %d → %d", name, fromPos, toPos), map[string]interface{}{
+		"success":       true,
+		"name":          name,
+		"path":          groupPath,
+		"from_position": fromPos,
+		"to_position":   toPos,
+	})
+}
+
+// groupSiblingPosition returns the 0-indexed position of a group among its siblings and the sibling paths
+func groupSiblingPosition(groupTree *session.GroupTree, groupPath string) (int, []string) {
+	parentPath := getParentGroupPath(groupPath)
+	level := session.GetGroupLevel(groupPath)
+
+	var siblings []string
+	for _, g := range groupTree.GroupList {
+		gParent := getParentGroupPath(g.Path)
+		if gParent == parentPath && session.GetGroupLevel(g.Path) == level {
+			siblings = append(siblings, g.Path)
+		}
+	}
+
+	for i, s := range siblings {
+		if s == groupPath {
+			return i, siblings
+		}
+	}
+	return -1, siblings
+}
+
 // getParentGroupPath returns the parent path of a group path
 func getParentGroupPath(path string) string {
 	if idx := strings.LastIndex(path, "/"); idx != -1 {
@@ -786,6 +975,8 @@ func reorderGroupArgs(args []string) []string {
 	valueFlags := map[string]bool{
 		"--parent":       true,
 		"--default-path": true,
+		"--position":     true,
+		"-p":             true,
 	}
 
 	var flags []string
