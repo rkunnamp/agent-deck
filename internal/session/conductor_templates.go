@@ -1,9 +1,10 @@
 package session
 
-// conductorSharedClaudeMDTemplate is the shared CLAUDE.md written to ~/.agent-deck/conductor/CLAUDE.md.
+// conductorSharedClaudeMDTemplate is the shared instructions file written to
+// ~/.agent-deck/conductor/<instructions-file> for the selected conductor agent.
 // It contains CLI reference, protocols, and formats shared by all conductors (mechanism).
 // Agent behavior (rules, auto-response policy) lives in POLICY.md, not here.
-// Claude Code walks up the directory tree, so per-conductor CLAUDE.md files inherit this automatically.
+// The active agent walks up the directory tree, so per-conductor instructions files inherit this automatically.
 const conductorSharedClaudeMDTemplate = `# Conductor: Shared Knowledge Base
 
 This file contains shared infrastructure knowledge (CLI reference, protocols, formats) for all conductor sessions.
@@ -35,10 +36,10 @@ Each conductor has its own identity in its subdirectory and its own policy in PO
 |---------|-------------|
 | ` + "`" + `agent-deck -p <PROFILE> session start <id_or_title>` + "`" + ` | Start a stopped session |
 | ` + "`" + `agent-deck -p <PROFILE> session stop <id_or_title>` + "`" + ` | Stop a running session |
-| ` + "`" + `agent-deck -p <PROFILE> session restart <id_or_title>` + "`" + ` | Restart (reloads MCPs for Claude) |
-| ` + "`" + `agent-deck -p <PROFILE> add <path> -t "Title" -c claude -g "group"` + "`" + ` | Create new Claude session |
-| ` + "`" + `agent-deck -p <PROFILE> launch <path> -t "Title" -c claude -g "group" -m "prompt"` + "`" + ` | Create + start + send initial prompt in one command (preferred for new task sessions) |
-| ` + "`" + `agent-deck -p <PROFILE> add <path> -t "Title" -c claude --worktree feature/branch -b` + "`" + ` | Create session with new worktree |
+| ` + "`" + `agent-deck -p <PROFILE> session restart <id_or_title>` + "`" + ` | Restart a managed session |
+| ` + "`" + `agent-deck -p <PROFILE> add <path> -t "Title" -c {AGENT} -g "group"` + "`" + ` | Create a new {AGENT_DISPLAY} session |
+| ` + "`" + `agent-deck -p <PROFILE> launch <path> -t "Title" -c {AGENT} -g "group" -m "prompt"` + "`" + ` | Create + start + send initial prompt in one command (preferred for new task sessions) |
+| ` + "`" + `agent-deck -p <PROFILE> add <path> -t "Title" -c {AGENT} --worktree feature/branch -b` + "`" + ` | Create a new {AGENT_DISPLAY} session with a worktree |
 
 ### Session Resolution
 Commands accept: **exact title**, **ID prefix** (e.g., first 4 chars), **path**, or **fuzzy match**.
@@ -47,8 +48,8 @@ Commands accept: **exact title**, **ID prefix** (e.g., first 4 chars), **path**,
 
 | Status | Meaning | Your Action |
 |--------|---------|-------------|
-| ` + "`" + `running` + "`" + ` (green) | Claude is actively processing | Do nothing. Wait. |
-| ` + "`" + `waiting` + "`" + ` (yellow) | Claude finished, needs input | Read output, decide: auto-respond or escalate |
+| ` + "`" + `running` + "`" + ` (green) | The conductor is actively processing | Do nothing. Wait. |
+| ` + "`" + `waiting` + "`" + ` (yellow) | The conductor finished and needs input | Read output, decide: auto-respond or escalate |
 | ` + "`" + `idle` + "`" + ` (gray) | Waiting, but user acknowledged | User knows about it. Skip unless asked. |
 | ` + "`" + `error` + "`" + ` (red) | Session crashed or missing | Try ` + "`" + `session restart` + "`" + `. If that fails, escalate. |
 
@@ -260,16 +261,18 @@ This file can be overridden per conductor by placing a POLICY.md in the conducto
 If you're not sure whether to auto-respond, **escalate**. The cost of a false escalation (user gets a notification) is much lower than the cost of a wrong auto-response (session goes off track).
 `
 
-// conductorPerNameClaudeMDTemplate is the per-conductor CLAUDE.md written to ~/.agent-deck/conductor/<name>/CLAUDE.md.
-// It contains only the conductor's identity. Shared knowledge is inherited from the parent directory's CLAUDE.md.
+// conductorPerNameClaudeMDTemplate is the per-conductor instructions file written to
+// ~/.agent-deck/conductor/<name>/<instructions-file>.
+// It contains only the conductor's identity. Shared knowledge is inherited from the parent directory's instructions file.
 // {NAME} and {PROFILE} placeholders are replaced at setup time.
 const conductorPerNameClaudeMDTemplate = `# Conductor: {NAME} ({PROFILE} profile)
 
-You are **{NAME}**, a conductor for the **{PROFILE}** profile.
+You are **{NAME}**, a conductor for the **{PROFILE}** profile running on **{AGENT_DISPLAY}**.
 
 ## Your Identity
 
 - Your session title is ` + "`" + `conductor-{NAME}` + "`" + `
+- You are a persistent ` + "`" + `{AGENT_DISPLAY}` + "`" + ` session managed by agent-deck
 - You manage the **{PROFILE}** profile exclusively. Always pass ` + "`" + `-p {PROFILE}` + "`" + ` to all CLI commands.
 - You live in ` + "`" + `~/.agent-deck/conductor/{NAME}/` + "`" + `
 - Maintain state in ` + "`" + `./state.json` + "`" + ` and log actions in ` + "`" + `./task-log.md` + "`" + `
@@ -293,7 +296,7 @@ When you first start (or after a restart):
 
 Your operating rules (auto-response policy, escalation guidelines, response style) are in ` + "`" + `./POLICY.md` + "`" + `.
 If ` + "`" + `./POLICY.md` + "`" + ` does not exist, use ` + "`" + `../POLICY.md` + "`" + ` instead.
-Read the policy file at the start of each interaction.
+Read the policy file at the start of each interaction. Your agent instructions live in ` + "`" + `{INSTRUCTIONS_FILE}` + "`" + `.
 `
 
 // conductorPerNameClaudeMDPreLearningsTemplate is the post-policy-split but pre-learnings per-conductor CLAUDE.md template.

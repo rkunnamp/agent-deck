@@ -163,7 +163,7 @@ See the [Docker Sandbox Guide](skills/agent-deck/references/sandbox.md) for the 
 
 ### Conductor
 
-Conductors are persistent Claude Code sessions that monitor and orchestrate all your other sessions. They watch for sessions that need help, auto-respond when confident, and escalate to you when they can't. Optionally connect **Telegram** and/or **Slack** for remote control.
+Conductors are persistent agent sessions that monitor and orchestrate all your other sessions. They watch for sessions that need help, auto-respond when confident, and escalate to you when they can't. Optionally connect **Telegram** and/or **Slack** for remote control.
 
 Create as many conductors as you need per profile:
 
@@ -175,7 +175,10 @@ agent-deck -p work conductor setup ops --description "Ops monitor"
 agent-deck -p work conductor setup infra --description "Infra watcher"
 agent-deck conductor setup personal --description "Personal project monitor"
 
-# Use a custom AI backend via environment variables
+# Run a conductor on Codex instead of Claude Code
+agent-deck -p work conductor setup review --agent codex --description "Codex reviewer"
+
+# Use a custom agent endpoint via environment variables
 agent-deck conductor setup glm-bot \
   -env ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \
   -env ANTHROPIC_AUTH_TOKEN=<token> \
@@ -189,17 +192,20 @@ Each conductor gets its own directory, identity, and settings:
 
 ```
 ~/.agent-deck/conductor/
-├── CLAUDE.md           # Shared knowledge (CLI ref, protocols, rules)
+├── CLAUDE.md           # Shared knowledge for Claude conductors
+├── AGENTS.md           # Shared knowledge for Codex conductors
 ├── bridge.py           # Bridge daemon (Telegram/Slack, if configured)
 ├── ops/
 │   ├── CLAUDE.md       # Identity: "You are ops, a conductor for the work profile"
 │   ├── meta.json       # Config: name, profile, description, env vars
 │   ├── state.json      # Runtime state
 │   └── task-log.md     # Action log
-└── infra/
-    ├── CLAUDE.md
+└── review/
+    ├── AGENTS.md
     └── meta.json
 ```
+
+Claude conductors use `CLAUDE.md`. Codex conductors use `AGENTS.md`. Shared `POLICY.md` and `LEARNINGS.md` remain agent-neutral.
 
 **CLI commands:**
 
@@ -279,7 +285,7 @@ Agent Deck works with any terminal-based AI tool:
 | **Claude Code** | Full (status, MCP, fork, resume) |
 | **Gemini CLI** | Full (status, MCP, resume) |
 | **OpenCode** | Status detection, organization |
-| **Codex** | Status detection, organization |
+| **Codex** | Status detection, organization, conductor |
 | **Cursor** (terminal) | Status detection, organization |
 | **Custom tools** | Configurable via `[tools.*]` in config.toml |
 

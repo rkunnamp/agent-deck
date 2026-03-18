@@ -747,6 +747,46 @@ func TestInstallSharedClaudeMD_CustomSymlinkCreatesConductorDir(t *testing.T) {
 	}
 }
 
+func TestInstallSharedConductorInstructions_CodexDefault(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	if err := InstallSharedConductorInstructions(ConductorAgentCodex, ""); err != nil {
+		t.Fatalf("InstallSharedConductorInstructions returned error: %v", err)
+	}
+
+	target := filepath.Join(tmpHome, ".agent-deck", "conductor", "AGENTS.md")
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(content), "Codex") {
+		t.Fatal("AGENTS.md should mention Codex")
+	}
+	if !strings.Contains(string(content), "agent-deck -p <PROFILE> add <path> -t \"Title\" -c codex") {
+		t.Fatal("AGENTS.md should render codex session examples")
+	}
+}
+
+func TestInstallSharedConductorInstructions_AgentsCoexist(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	if err := InstallSharedConductorInstructions(ConductorAgentClaude, ""); err != nil {
+		t.Fatalf("InstallSharedConductorInstructions(claude) returned error: %v", err)
+	}
+	if err := InstallSharedConductorInstructions(ConductorAgentCodex, ""); err != nil {
+		t.Fatalf("InstallSharedConductorInstructions(codex) returned error: %v", err)
+	}
+
+	base := filepath.Join(tmpHome, ".agent-deck", "conductor")
+	for _, file := range []string{"CLAUDE.md", "AGENTS.md"} {
+		if _, err := os.Stat(filepath.Join(base, file)); err != nil {
+			t.Fatalf("%s should exist: %v", file, err)
+		}
+	}
+}
+
 func TestSetupConductor_DefaultTemplate(t *testing.T) {
 	name := "test-default"
 	profile := "default"
@@ -792,6 +832,64 @@ func TestSetupConductor_DefaultTemplate(t *testing.T) {
 	// Just verify basic fields exist
 	if meta.Name != name {
 		t.Errorf("expected name %q, got %q", name, meta.Name)
+	}
+	if meta.Agent != ConductorAgentClaude {
+		t.Errorf("expected agent %q, got %q", ConductorAgentClaude, meta.Agent)
+	}
+}
+
+func TestSetupConductorWithAgent_Codex(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	name := "test-codex"
+	if err := SetupConductorWithAgent(name, "default", ConductorAgentCodex, true, true, "codex conductor", "", "", nil, ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dir, _ := ConductorNameDir(name)
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	content, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(content), "Codex") {
+		t.Fatal("AGENTS.md should mention Codex")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md should not be created for Codex conductor")
+	}
+
+	meta, err := LoadConductorMeta(name)
+	if err != nil {
+		t.Fatalf("failed to load meta: %v", err)
+	}
+	if meta.Agent != ConductorAgentCodex {
+		t.Fatalf("agent = %q, want %q", meta.Agent, ConductorAgentCodex)
+	}
+	if meta.GetClearOnCompact() {
+		t.Fatal("codex conductor should not enable clear_on_compact")
+	}
+}
+
+func TestSetupConductorWithAgent_RemovesStaleInstructionsFile(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	name := "switch-agent"
+	if err := SetupConductor(name, "default", true, true, "", "", "", nil, ""); err != nil {
+		t.Fatalf("failed to create initial Claude conductor: %v", err)
+	}
+	if err := SetupConductorWithAgent(name, "default", ConductorAgentCodex, true, true, "", "", "", nil, ""); err != nil {
+		t.Fatalf("failed to switch conductor to Codex: %v", err)
+	}
+
+	dir, _ := ConductorNameDir(name)
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md should be removed after switching conductor agent to Codex")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Fatalf("AGENTS.md should exist after switching conductor agent to Codex: %v", err)
 	}
 }
 
@@ -903,6 +1001,30 @@ func TestLoadConductorMeta_EmptyProfileDefaultsToDefault(t *testing.T) {
 	}
 	if meta.Profile != DefaultProfile {
 		t.Fatalf("meta profile = %q, want %q", meta.Profile, DefaultProfile)
+	}
+}
+
+func TestLoadConductorMeta_EmptyAgentDefaultsToClaude(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	name := "meta-empty-agent"
+	dir, _ := ConductorNameDir(name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("failed to create conductor dir: %v", err)
+	}
+
+	raw := `{"name":"meta-empty-agent","profile":"default","heartbeat_enabled":true,"created_at":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "meta.json"), []byte(raw), 0o644); err != nil {
+		t.Fatalf("failed to write meta.json: %v", err)
+	}
+
+	meta, err := LoadConductorMeta(name)
+	if err != nil {
+		t.Fatalf("LoadConductorMeta failed: %v", err)
+	}
+	if meta.Agent != ConductorAgentClaude {
+		t.Fatalf("meta agent = %q, want %q", meta.Agent, ConductorAgentClaude)
 	}
 }
 
@@ -1965,6 +2087,15 @@ func TestConductorClearOnCompact(t *testing.T) {
 
 	if inst.ConductorClearOnCompact() {
 		t.Error("should return false when clear_on_compact is explicitly disabled")
+	}
+
+	meta = ConductorMeta{Name: "main", Agent: ConductorAgentCodex, Profile: "default"}
+	data, _ = json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(condDir, "meta.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if inst.ConductorClearOnCompact() {
+		t.Error("codex conductors should always disable clear_on_compact")
 	}
 
 	// Non-conductor title should return false (not a conductor-prefixed session)
