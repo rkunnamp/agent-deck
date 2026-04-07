@@ -1,8 +1,46 @@
 // GroupRow.js -- Collapsible group header row
 import { html } from 'htm/preact'
 import { groupExpandedSignal, toggleGroup, isGroupExpanded } from './groupState.js'
-import { groupNameDialogSignal, confirmDialogSignal } from './state.js'
+import { groupNameDialogSignal, confirmDialogSignal, sessionsSignal, searchQuerySignal } from './state.js'
 import { apiFetch } from './api.js'
+
+// countVisibleChildren returns the number of sessions whose groupPath
+// belongs to the given group (or any subgroup) and that pass the active
+// search filter. The count is derived from sessionsSignal + searchQuerySignal
+// so it stays in sync with whatever SessionList.js actually renders.
+//
+// Closes BUG #16 / UX-05: GroupRow.js previously read the sessionCount
+// field off the API-provided MenuGroup struct. The backend at
+// internal/web/menu_snapshot_builder.go populates that count from
+// groupTree.SessionCountForGroup, which counts the full subtree and ignores
+// the search filter. The frontend then renders only matching/visible
+// children, so the displayed count drifted from the rendered count whenever
+// the user activated search or SSE delivered a session-removed event before
+// the snapshot was refetched. The fix is frontend-only — the backend
+// SessionCountForGroup is correct for "total sessions in group + subgroups"
+// and is left untouched.
+function countVisibleChildren(groupPath, query) {
+  // Subscribe to both signals so this re-runs on updates
+  void sessionsSignal.value
+  void searchQuerySignal.value
+  const items = sessionsSignal.value || []
+  let count = 0
+  for (const item of items) {
+    if (item.type !== 'session' || !item.session) continue
+    const gp = item.session.groupPath || ''
+    // Match this group OR any subgroup
+    if (gp !== groupPath && !gp.startsWith(groupPath + '/')) continue
+    if (query) {
+      // Mirror SessionList.matchesSearch logic minimally
+      const s = item.session
+      const text = [s.title, s.id, s.groupPath, s.path, s.tool].join(' ').toLowerCase()
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+      if (!terms.every(term => text.includes(term))) continue
+    }
+    count++
+  }
+  return count
+}
 
 export function GroupRow({ item }) {
   const group = item.group
@@ -54,18 +92,22 @@ export function GroupRow({ item }) {
         <span class="text-base leading-none select-none">${expanded ? '\u25BE' : '\u25B8'}</span>
         <span class="flex-1 truncate min-w-0 text-left" title=${group.name || group.path}>${group.name || group.path}</span>
         <span class="dark:text-tn-muted/60 text-gray-400 font-normal">
-          (${group.sessionCount || 0})
+          (${countVisibleChildren(group.path, searchQuerySignal.value)})
         </span>
-        <span class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <span
+          onClick=${(e) => e.stopPropagation()}
+          onMouseDown=${(e) => e.stopPropagation()}
+          class="hidden group-hover:flex items-center gap-0.5 flex-shrink-0"
+        >
           <button type="button" onClick=${handleCreateGroup} title="New subgroup" aria-label="Create subgroup"
-            class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded
+            class="min-w-[36px] min-h-[36px] flex items-center justify-center rounded
                    dark:text-tn-muted hover:dark:text-tn-blue hover:text-gray-700 transition-colors">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
           </button>
           <button type="button" onClick=${handleRename} title="Rename group" aria-label="Rename group"
-            class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded
+            class="min-w-[36px] min-h-[36px] flex items-center justify-center rounded
                    dark:text-tn-muted hover:dark:text-tn-blue hover:text-gray-700 transition-colors">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -73,7 +115,7 @@ export function GroupRow({ item }) {
             </svg>
           </button>
           <button type="button" onClick=${handleDeleteGroup} title="Delete group" aria-label="Delete group"
-            class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded
+            class="min-w-[36px] min-h-[36px] flex items-center justify-center rounded
                    dark:text-tn-muted hover:dark:text-tn-red hover:text-gray-700 transition-colors">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

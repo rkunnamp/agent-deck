@@ -4,6 +4,7 @@
 import { html } from 'htm/preact'
 import { useEffect } from 'preact/hooks'
 import { AppShell } from './AppShell.js'
+import { KeyboardShortcutsOverlay } from './KeyboardShortcutsOverlay.js'
 import { selectedIdSignal } from './state.js'
 
 export function App() {
@@ -41,5 +42,8 @@ export function App() {
     }
   }, [selectedIdSignal.value])
 
-  return html`<${AppShell} />`
+  return html`
+    <${AppShell} />
+    <${KeyboardShortcutsOverlay} />
+  `
 }

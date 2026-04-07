@@ -2,7 +2,7 @@
 // Uses focusedIdSignal (session ID) instead of numeric index for stability across SSE updates.
 // NOTE: focusedIdSignal lives in state.js (not SessionList.js) to avoid circular imports.
 import { useEffect } from 'preact/hooks'
-import { sessionsSignal, selectedIdSignal, focusedIdSignal, createSessionDialogSignal, confirmDialogSignal, groupNameDialogSignal } from './state.js'
+import { sessionsSignal, selectedIdSignal, focusedIdSignal, createSessionDialogSignal, confirmDialogSignal, groupNameDialogSignal, shortcutsOverlaySignal } from './state.js'
 import { isGroupExpanded, groupExpandedSignal } from './groupState.js'
 import { apiFetch } from './api.js'
 
@@ -94,6 +94,9 @@ export function useKeyboardNav() {
           message: 'Delete session "' + (sess.title || sess.id) + '"? This cannot be undone.',
           onConfirm: () => apiFetch('DELETE', '/api/sessions/' + sess.id)
         }
+      } else if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        shortcutsOverlaySignal.value = true
       }
     }
 

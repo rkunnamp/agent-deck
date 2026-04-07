@@ -3,12 +3,38 @@
 import { html } from 'htm/preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { apiFetch } from './api.js'
-import { themeSignal } from './state.js'
-
-const CHART_COLORS = ['#7aa2f7','#bb9af7','#7dcfff','#9ece6a','#e0af68','#f7768e','#73daca','#ff9e64']
 
 function fmt(v) {
   return '$' + (v || 0).toFixed(2)
+}
+
+// readChartTheme reads chart palette CSS variables from the document root.
+// Variables are defined in internal/web/static/styles.src.css under :root
+// (light) and html.dark (dark override). The MutationObserver wired up
+// inside CostDashboard's useEffect re-runs buildCharts() whenever the
+// theme class on <html> changes, so this helper produces the live palette.
+// Per BUG #13 / UX-02 — replaces the legacy CHART_COLORS constant + isDark
+// ternary that hardcoded every chart color in JS.
+function readChartTheme() {
+  const cs = getComputedStyle(document.documentElement)
+  const v = (name, fallback) => (cs.getPropertyValue(name).trim() || fallback)
+  return {
+    text:        v('--chart-text',         '#6b7280'),
+    grid:        v('--chart-grid',         '#e5e7eb'),
+    legend:      v('--chart-legend',       '#374151'),
+    primary:     v('--chart-primary',      '#2959aa'),
+    primaryFill: v('--chart-primary-fill', 'rgba(41, 89, 170, 0.1)'),
+    categorical: [
+      v('--chart-categorical-1', '#7aa2f7'),
+      v('--chart-categorical-2', '#bb9af7'),
+      v('--chart-categorical-3', '#7dcfff'),
+      v('--chart-categorical-4', '#9ece6a'),
+      v('--chart-categorical-5', '#e0af68'),
+      v('--chart-categorical-6', '#f7768e'),
+      v('--chart-categorical-7', '#73daca'),
+      v('--chart-categorical-8', '#ff9e64'),
+    ],
+  }
 }
 
 export function CostDashboard() {
@@ -62,11 +88,11 @@ export function CostDashboard() {
 
         if (!dailyCanvasRef.current || !modelCanvasRef.current) return
 
-        // Theme-aware chart colors
-        const isDark = document.documentElement.classList.contains('dark')
-        const tickColor = isDark ? '#565f89' : '#6b7280'
-        const gridColor = isDark ? '#1f2335' : '#e5e7eb'
-        const legendColor = isDark ? '#c0caf5' : '#374151'
+        // Theme-aware chart colors read from CSS custom properties on
+        // document.documentElement. The MutationObserver below re-runs
+        // buildCharts() whenever the `dark` class toggles, so this read
+        // always reflects the active theme without a page reload.
+        const t = readChartTheme()
 
         const dates = dailyData || []
         const labels = dates.map(d => d.date.slice(5))
@@ -79,8 +105,8 @@ export function CostDashboard() {
             datasets: [{
               label: 'Daily Cost ($)',
               data: costs,
-              borderColor: '#7aa2f7',
-              backgroundColor: 'rgba(122,162,247,0.1)',
+              borderColor: t.primary,
+              backgroundColor: t.primaryFill,
               fill: true,
               tension: 0.3,
             }],
@@ -89,10 +115,10 @@ export function CostDashboard() {
             responsive: true,
             plugins: { legend: { display: false } },
             scales: {
-              x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+              x: { ticks: { color: t.text }, grid: { color: t.grid } },
               y: {
-                ticks: { color: tickColor, callback: v => '$' + v.toFixed(2) },
-                grid: { color: gridColor },
+                ticks: { color: t.text, callback: v => '$' + v.toFixed(2) },
+                grid: { color: t.grid },
               },
             },
           },
@@ -108,7 +134,7 @@ export function CostDashboard() {
             labels: mLabels,
             datasets: [{
               data: mData,
-              backgroundColor: CHART_COLORS.slice(0, mLabels.length),
+              backgroundColor: t.categorical.slice(0, mLabels.length),
             }],
           },
           options: {
@@ -116,7 +142,7 @@ export function CostDashboard() {
             plugins: {
               legend: {
                 position: 'bottom',
-                labels: { color: legendColor, font: { size: 11 } },
+                labels: { color: t.legend, font: { size: 11 } },
               },
             },
           },
@@ -128,10 +154,21 @@ export function CostDashboard() {
 
     buildCharts()
 
+    // Re-build charts when the theme class on <html> changes (BUG #13 / UX-02).
+    // The MutationObserver replaces the previous theme signal dep — the root
+    // element class is the source of truth for theme, and reading via
+    // getComputedStyle gives Chart.js the new CSS variable values without
+    // requiring the parent to re-mount the component.
+    const observer = new MutationObserver(() => {
+      buildCharts()
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+
     return () => {
       cancelled = true
+      observer.disconnect()
     }
-  }, [loading, error, themeSignal.value])
+  }, [loading, error])
 
   // Cleanup chart instances on unmount
   useEffect(() => {

@@ -118,6 +118,22 @@
   --topbar-height: 56px;
   --app-height: 100vh;
   --keyboard-inset: 0px;
+
+  /* ----- Chart palette (BUG #13 / UX-02) ----- */
+  /* Read by app/CostDashboard.js via getComputedStyle().getPropertyValue('--chart-*') */
+  --chart-text:          #6b7280;
+  --chart-grid:          #e5e7eb;
+  --chart-legend:        #374151;
+  --chart-primary:       #2959aa;
+  --chart-primary-fill:  rgba(41, 89, 170, 0.1);
+  --chart-categorical-1: #7aa2f7;
+  --chart-categorical-2: #bb9af7;
+  --chart-categorical-3: #7dcfff;
+  --chart-categorical-4: #9ece6a;
+  --chart-categorical-5: #e0af68;
+  --chart-categorical-6: #f7768e;
+  --chart-categorical-7: #73daca;
+  --chart-categorical-8: #ff9e64;
 }
 
 /* ===== Dark mode (Tokyo Night) ===== */
@@ -129,6 +145,14 @@ html.dark {
   --muted: #787c99;
   --border: rgba(120, 124, 153, 0.2);
   --accent: #7aa2f7;
+
+  /* ----- Chart palette dark overrides (BUG #13 / UX-02) ----- */
+  --chart-text:         #565f89;
+  --chart-grid:         #1f2335;
+  --chart-legend:       #c0caf5;
+  --chart-primary:      #7aa2f7;
+  --chart-primary-fill: rgba(122, 162, 247, 0.1);
+  /* categorical palette is the same in both themes (uses tn-* hues that work on light + dark) */
 }
 
 html,

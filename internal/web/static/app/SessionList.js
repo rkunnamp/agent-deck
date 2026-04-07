@@ -115,7 +115,7 @@ export function SessionList() {
     </div>`
   }
 
-  return html`<ul class="flex flex-col gap-0.5 py-sp-4" role="list" id="preact-session-list">
+  return html`<ul class="flex flex-col gap-0.5 py-sp-4 min-w-0" role="list" id="preact-session-list">
     ${filtered.map(item => {
       if (item.type === 'group' && item.group) {
         if (!query && hasCollapsedStrictAncestor(item.group.path)) return null

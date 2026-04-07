@@ -106,8 +106,12 @@ export function SessionRow({ item, focused }) {
             ${costLabel}
           </span>
         `}
-        <span class="flex items-center gap-0.5 flex-shrink-0 ml-1 transition-opacity
-          ${(hovered || focused || isSelected) ? 'opacity-100' : 'opacity-0 pointer-events-none'}">
+        <span
+          onClick=${(e) => e.stopPropagation()}
+          onMouseDown=${(e) => e.stopPropagation()}
+          class="flex items-center gap-0.5 flex-shrink-0 ml-1 transition-opacity
+          ${(hovered || focused || isSelected) ? 'opacity-100' : 'opacity-0 pointer-events-none'}"
+        >
           ${(displayStatus === 'running' || displayStatus === 'waiting') && html`
             <button type="button" onClick=${handleStop} disabled=${mutating} title="Stop (s)" aria-label="Stop session"
               class="min-w-[44px] min-h-[44px] flex items-center justify-center rounded
