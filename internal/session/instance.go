@@ -394,6 +394,7 @@ func NewInstance(title, projectPath string) *Instance {
 	tmuxSess := tmux.NewSession(title, projectPath)
 	tmuxSess.InstanceID = id // Pass instance ID for activity hooks
 	tmuxSess.SetInjectStatusLine(GetTmuxSettings().GetInjectStatusLine())
+	tmuxSess.SetClearOnRestart(GetTmuxSettings().ClearOnRestart)
 
 	return &Instance{
 		ID:          id,
@@ -420,6 +421,7 @@ func NewInstanceWithTool(title, projectPath, tool string) *Instance {
 	tmuxSess := tmux.NewSession(title, projectPath)
 	tmuxSess.InstanceID = id // Pass instance ID for activity hooks
 	tmuxSess.SetInjectStatusLine(GetTmuxSettings().GetInjectStatusLine())
+	tmuxSess.SetClearOnRestart(GetTmuxSettings().ClearOnRestart)
 
 	inst := &Instance{
 		ID:          id,
@@ -3963,6 +3965,7 @@ func (i *Instance) Restart() error {
 	i.tmuxSession = tmux.NewSession(i.Title, i.ProjectPath)
 	i.tmuxSession.InstanceID = i.ID // Pass instance ID for activity hooks
 	i.tmuxSession.SetInjectStatusLine(GetTmuxSettings().GetInjectStatusLine())
+	i.tmuxSession.SetClearOnRestart(GetTmuxSettings().ClearOnRestart)
 
 	var command string
 	if IsClaudeCompatible(i.Tool) && i.ClaudeSessionID != "" {

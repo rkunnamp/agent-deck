@@ -883,6 +883,12 @@ type TmuxSettings struct {
 	// Example: window_style_override = "default"
 	WindowStyleOverride string `toml:"window_style_override"`
 
+	// ClearOnRestart clears the tmux scrollback buffer when a session is
+	// restarted (respawn-pane). When false (default), the previous session's
+	// output is preserved in scrollback. When true, scrollback is wiped so
+	// the new session starts with a clean buffer.
+	ClearOnRestart bool `toml:"clear_on_restart"`
+
 	// Options is a map of tmux option names to values.
 	// These are passed to `tmux set-option -t <session>` after defaults.
 	Options map[string]string `toml:"options"`
@@ -1820,7 +1826,11 @@ auto_cleanup = true
 # window_style_override sets the tmux window-style for all sessions, overriding
 # the theme default. Use "default" to let your terminal's background show through.
 # window_style_override = "default"
-# Override tmux options applied to every session (applied after defaults)
+# clear_on_restart clears the tmux scrollback buffer when a session is restarted.
+# When false (default), previous output is preserved. When true, scrollback is wiped.
+# clear_on_restart = true
+# Override tmux options applied to every session (applied after defaults).
+# agent-deck does NOT set history-limit by default, so your tmux.conf value is used.
 # Options matching agent-deck's managed keys (status, status-style,
 # status-left-length, status-right, status-right-length) will cause agent-deck
 # to skip its default for that key, letting your value take full effect.
