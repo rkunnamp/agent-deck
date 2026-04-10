@@ -35,6 +35,8 @@ Merge policy: 3-5 PRs per batch with `make ci` + macOS TUI smoke test between ba
 - [x] **Phase 9: Polish** — 7 premium UX refinements (skeleton loader, transitions, profile dropdown, light theme audit) (COMPLETE 2026-04-09; 4/4 plans)
 - [x] **Phase 10: Automated Testing** — Visual regression + Lighthouse CI + E2E coverage blocking future regressions (completed 2026-04-10)
 - [ ] **Phase 11: Release v1.5.0** — Tag, visual verification, macOS smoke test, changelog, real-device mobile verification
+- [x] **Phase 12: DB Schema and Config Foundation** — Watchers + watcher_events tables, WatcherSettings config, WatcherMeta filesystem persistence (COMPLETE 2026-04-10; 2/2 plans)
+- [ ] **Phase 13: Watcher Engine Core** — WatcherAdapter interface, Event struct, config-driven router, event dedup engine, single-writer goroutine, health tracker
 
 ---
 
@@ -49,6 +51,8 @@ Merge policy: 3-5 PRs per batch with `make ci` + macOS TUI smoke test between ba
 | 9 | Polish | 7 | 4 | Partial (POL-1..5 parallel; POL-6 last; POL-7 with P0-4) | Phase 10 (TEST-A baselines) |
 | 10 | 4/4 | Complete   | 2026-04-10 | Partial (TEST-A first, TEST-B after PERF-H, TEST-C/D parallel) | Phase 11 |
 | 11 | Release v1.5.0 | 5 | 3 | No (sequential release gate) | — |
+| 12 | DB Schema and Config Foundation | 6 | 2 | Partial (plan 1 serial; plan 2 after plan 1) | Phase 13 |
+| 13 | Watcher Engine Core | 7 | TBD | TBD | Phases 14, 15, 16 |
 
 **Total requirements mapped:** 43 / 43 (100%)
 **Total plans across active phases:** ~25 (Phase 5 excluded; plan counts refined in plan-phase stage)
@@ -261,6 +265,40 @@ Plans:
 
 ---
 
+### Phase 12: DB Schema and Config Foundation
+
+**Status:** COMPLETE (2026-04-10; 2/2 plans)
+**Goal:** Add watchers + watcher_events tables to statedb with full ALTER TABLE migration path, WatcherSettings to UserConfig with safe defaults, and WatcherMeta filesystem persistence following the conductor pattern. Users with existing state.db upgrade cleanly.
+**Depends on:** None (foundation layer)
+**Requirements:** SCHEMA-01, SCHEMA-02, SCHEMA-03, SCHEMA-04, SCHEMA-05, SCHEMA-06
+
+**Plans:** 2/2 complete (see `.planning/phases/12-db-schema-and-config-foundation/`)
+
+---
+
+### Phase 13: Watcher Engine Core
+
+**Goal:** Build the watcher engine that defines the WatcherAdapter interface all adapters implement, the Event struct for normalized event data, the config-driven router for clients.json rule matching, the event dedup engine using INSERT OR IGNORE, a single-writer goroutine for serialized DB writes, and a health tracker with rolling event rate and silence detection. Full event-to-routing pipeline tested without real external sources.
+**Depends on:** Phase 12 (schema and config foundation)
+**Requirements:** ENGINE-01, ENGINE-02, ENGINE-03, ENGINE-04, ENGINE-05, ENGINE-06, ENGINE-07
+
+**Success Criteria (what must be TRUE):**
+1. WatcherAdapter interface exists with Setup/Listen/Teardown/HealthCheck methods and AdapterConfig parameter
+2. Event struct normalizes source/sender/subject with DedupKey() method and JSON serialization
+3. Router loads clients.json, matches exact email and wildcard *@domain patterns, exact takes priority over wildcard
+4. Engine event loop deduplicates via INSERT OR IGNORE + rows-affected check (no check-then-insert TOCTOU)
+5. Single-writer goroutine serializes all watcher DB writes via buffered channel pattern (no concurrent SQLite writes)
+6. Health tracker reports rolling event rate per watcher, detects silence when no events for max_silence_minutes, counts consecutive errors
+7. Engine Stop() cancels all adapter contexts and exits cleanly with no goroutine leaks (goleak test in same PR)
+
+**Canonical refs:** `internal/statedb/statedb.go` (watcher CRUD from Phase 12), `internal/session/conductor.go` (lifecycle pattern), `internal/session/event_watcher.go` (fsnotify goroutine pattern), `docs/superpowers/specs/2026-04-10-watcher-framework-design.md` (router spec, event schema)
+
+**Plans:** TBD (created during plan-phase)
+
+**Research flag:** Standard patterns (mirrors StorageWatcher, StatusEventWatcher lifecycle). Skip research-phase.
+
+---
+
 ## Progress Table
 
 | Phase | Plans Complete | Status | Completed |
@@ -272,6 +310,8 @@ Plans:
 | 9. Polish | 0/4 | Not started | — |
 | 10. Automated Testing | 0/4 | Not started | — |
 | 11. Release v1.5.0 | 0/3 | Not started | — |
+| 12. DB Schema and Config | 2/2 | COMPLETE | 2026-04-10 |
+| 13. Watcher Engine Core | 0/TBD | Not started | — |
 
 ---
 
