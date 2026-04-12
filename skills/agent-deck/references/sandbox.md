@@ -144,7 +144,7 @@ Example: `agent-deck-my-refactor-a1b2c3d4`
 ## Environment Variables
 
 These terminal-related variables are always passed through for proper UI/theming:
-- `TERM`, `COLORTERM`, `FORCE_COLOR`, `NO_COLOR`
+- `TERM`, `COLORTERM`, `FORCE_COLOR`, `NO_COLOR`, `COLORFGBG`
 
 Pass additional variables (like API keys) through to containers by adding them to config:
 

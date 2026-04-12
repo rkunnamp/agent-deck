@@ -136,6 +136,14 @@ func TestExecPrefix(t *testing.T) {
 	require.Equal(t, []string{"docker", "exec", "-it", "my-container"}, prefix)
 }
 
+func TestExecPrefixNonInteractive(t *testing.T) {
+	t.Parallel()
+
+	c := NewContainer("my-container", "")
+	prefix := c.ExecPrefixNonInteractive()
+	require.Equal(t, []string{"docker", "exec", "my-container"}, prefix)
+}
+
 func TestDefaultImage(t *testing.T) {
 	t.Parallel()
 
