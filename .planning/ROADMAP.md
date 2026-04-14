@@ -84,7 +84,14 @@ Plans:
   6. On every `session start` / `restart`, `~/.agent-deck/logs/*.log` contains exactly one structured line of the form `resume: id=<x> reason=conversation_data_present` or `resume: none reason=fresh_session` — verified by `grep 'resume:' ~/.agent-deck/logs/*.log` returning rows.
   7. The invariants of `docs/session-id-lifecycle.md` remain honored — no disk-scan authoritative binding, instance JSON is the source of truth.
 
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Regression guard TestPersistence_ClaudeSessionIDPreservedThroughStopError (PERSIST-08)
+- [ ] 03-02-PLAN.md — RED test TestPersistence_SessionIDFallbackWhenJSONLMissing (PERSIST-07, PERSIST-09)
+- [ ] 03-03-PLAN.md — Route Start/StartWithMessage through buildClaudeResumeCommand (PERSIST-07..09; TEST-05..08 GREEN)
+- [ ] 03-04-PLAN.md — Emit OBS-02 resume log line + three log-capture tests (OBS-02, OBS-03)
+- [ ] 03-05-PLAN.md — PERSIST-10 subsection in docs/session-id-lifecycle.md + Phase 3 sign-off in STATE.md (PERSIST-10)
 
 ### Phase 4: Verification harness, docs, and CI wiring
 
@@ -125,7 +132,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Within each phase, TDD ord
 |-------|----------------|--------|-----------|
 | 1. Persistence test scaffolding (RED) | 0/TBD | Not started | - |
 | 2. Cgroup isolation default (REQ-1 fix) | 0/TBD | Not started | - |
-| 3. Resume-on-start and error-recovery (REQ-2 fix) | 0/TBD | Not started | - |
+| 3. Resume-on-start and error-recovery (REQ-2 fix) | 0/5 | Not started | - |
 | 4. Verification harness, docs, and CI wiring | 0/TBD | Not started | - |
 
 ---
