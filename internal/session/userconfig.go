@@ -3,6 +3,7 @@ package session
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	dark "github.com/thiagokokada/dark-mode-go"
 
+	"github.com/asheshgoplani/agent-deck/internal/logging"
 	"github.com/asheshgoplani/agent-deck/internal/platform"
 	"github.com/asheshgoplani/agent-deck/internal/tmux"
 )
@@ -969,6 +971,67 @@ func isSystemdUserScopeAvailable() bool {
 func resetSystemdDetectionCacheForTest() {
 	systemdUserScopeOnce = sync.Once{}
 	systemdUserScopeAvailable = false
+}
+
+// systemdAvailableForLog is a swappable seam so unit tests can deterministically
+// drive both branches of the OBS-01 log decision without manipulating PATH or
+// the systemd user manager. Production callers always read
+// isSystemdUserScopeAvailable.
+var systemdAvailableForLog = isSystemdUserScopeAvailable
+
+// cgroupIsolationLog is the slog handle used by LogCgroupIsolationDecision.
+// It mirrors the migrationLog pattern at internal/session/migration.go:13 so
+// the OBS-01 line is routed through the same dynamicHandler that lands records
+// in lumberjack-rotated ~/.agent-deck/debug.log. Tests swap it via
+// captureCgroupIsolationLog to capture the emitted record without going
+// through disk.
+var cgroupIsolationLog *slog.Logger = logging.ForComponent(logging.CompSession)
+
+// cgroupIsolationOnce ensures LogCgroupIsolationDecision emits exactly once
+// per process. Tests can reset it via resetCgroupIsolationLogOnceForTest.
+var cgroupIsolationOnce sync.Once
+
+// resetCgroupIsolationLogOnceForTest clears the once-guard so the next
+// LogCgroupIsolationDecision call re-emits. Test-only — never call from
+// production code.
+func resetCgroupIsolationLogOnceForTest() {
+	cgroupIsolationOnce = sync.Once{}
+}
+
+// LogCgroupIsolationDecision emits exactly one structured log line per
+// process describing the cgroup isolation decision the runtime made. The
+// emitted message is one of these four exact strings (pinned by
+// TestLogCgroupIsolationDecision_*):
+//
+//   - "tmux cgroup isolation: enabled (systemd-run detected)"
+//   - "tmux cgroup isolation: disabled (systemd-run not available)"
+//   - "tmux cgroup isolation: enabled (config override)"
+//   - "tmux cgroup isolation: disabled (config override)"
+//
+// Decision logic mirrors GetLaunchInUserScope: an explicit (non-nil)
+// LaunchInUserScope wins, otherwise systemdAvailableForLog() decides. The
+// sync.Once guarantees one-line-per-process even when called from multiple
+// goroutines.
+//
+// Satisfies OBS-01. Intended to be called once from the application bootstrap
+// (cmd/agent-deck/main.go) immediately after logging.Init so the line lands in
+// ~/.agent-deck/debug.log via lumberjack.
+func LogCgroupIsolationDecision() {
+	cgroupIsolationOnce.Do(func() {
+		settings := GetTmuxSettings()
+		var msg string
+		switch {
+		case settings.LaunchInUserScope != nil && *settings.LaunchInUserScope:
+			msg = "tmux cgroup isolation: enabled (config override)"
+		case settings.LaunchInUserScope != nil && !*settings.LaunchInUserScope:
+			msg = "tmux cgroup isolation: disabled (config override)"
+		case systemdAvailableForLog():
+			msg = "tmux cgroup isolation: enabled (systemd-run detected)"
+		default:
+			msg = "tmux cgroup isolation: disabled (systemd-run not available)"
+		}
+		cgroupIsolationLog.Info(msg)
+	})
 }
 
 // DockerSettings defines Docker sandbox configuration.
