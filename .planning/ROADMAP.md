@@ -110,7 +110,13 @@ Plans:
   6. The top-level `README.md` or `CHANGELOG.md` contains exactly one line mentioning v1.5.2 session-persistence (DOC-05).
   7. CI runs both `go test -run TestPersistence_ ./internal/session/... -race -count=1` and `bash scripts/verify-session-persistence.sh`; a red of either blocks the PR. The CLAUDE.md section references the script path by name (SCRIPT-07).
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — scripts/verify-session-persistence.sh + fake-claude stub (SCRIPT-01..06)
+- [ ] 04-02-PLAN.md — CLAUDE.md mandate audit + CHANGELOG.md v1.5.2 line (DOC-01..05)
+- [ ] 04-03-PLAN.md — .github/workflows/session-persistence.yml CI gate (SCRIPT-07)
+- [ ] 04-04-PLAN.md — End-to-end verify run + 04-VERIFY.md + STATE.md sign-off (verification-only)
 
 ## Milestone success criteria
 
@@ -133,7 +139,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4. Within each phase, TDD ord
 | 1. Persistence test scaffolding (RED) | 0/TBD | Not started | - |
 | 2. Cgroup isolation default (REQ-1 fix) | 0/TBD | Not started | - |
 | 3. Resume-on-start and error-recovery (REQ-2 fix) | 0/5 | Not started | - |
-| 4. Verification harness, docs, and CI wiring | 0/TBD | Not started | - |
+| 4. Verification harness, docs, and CI wiring | 0/4 | Not started | - |
 
 ---
 *Roadmap created: 2026-04-14 from `docs/SESSION-PERSISTENCE-SPEC.md` and `.planning/REQUIREMENTS.md`. Granularity: standard. Coverage: 33/33 v1 requirements mapped.*
