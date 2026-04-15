@@ -823,23 +823,26 @@ func (t *GroupTree) DeleteGroup(path string) []*Instance {
 	// Add sessions from the main group
 	allMovedSessions = append(allMovedSessions, group.Sessions...)
 
-	// Move all sessions to default group
-	for _, sess := range allMovedSessions {
-		sess.GroupPath = DefaultGroupPath
-	}
-
-	// Ensure default group exists
-	defaultGroup, exists := t.Groups[DefaultGroupPath]
-	if !exists {
-		defaultGroup = &Group{
-			Name:     DefaultGroupName,
-			Path:     DefaultGroupPath,
-			Expanded: true,
-			Sessions: []*Instance{},
+	// Only touch the default group when there are sessions that need a new home.
+	// Otherwise deleting an empty non-default group would spuriously materialize
+	// a "My Sessions" group the user never asked for.
+	if len(allMovedSessions) > 0 {
+		for _, sess := range allMovedSessions {
+			sess.GroupPath = DefaultGroupPath
 		}
-		t.Groups[DefaultGroupPath] = defaultGroup
+
+		defaultGroup, exists := t.Groups[DefaultGroupPath]
+		if !exists {
+			defaultGroup = &Group{
+				Name:     DefaultGroupName,
+				Path:     DefaultGroupPath,
+				Expanded: true,
+				Sessions: []*Instance{},
+			}
+			t.Groups[DefaultGroupPath] = defaultGroup
+		}
+		defaultGroup.Sessions = append(defaultGroup.Sessions, allMovedSessions...)
 	}
-	defaultGroup.Sessions = append(defaultGroup.Sessions, allMovedSessions...)
 
 	// Remove the main group
 	delete(t.Groups, path)

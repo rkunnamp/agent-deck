@@ -569,6 +569,31 @@ func TestDeleteDefaultGroup(t *testing.T) {
 	}
 }
 
+// TestDeleteEmptyGroupDoesNotCreateDefault verifies that deleting an empty,
+// non-default group does NOT spuriously create the default "My Sessions" group
+// when no sessions need to be moved.
+func TestDeleteEmptyGroupDoesNotCreateDefault(t *testing.T) {
+	tree := NewGroupTree([]*Instance{})
+	tree.CreateGroup("Experiments")
+
+	// Sanity: default group should not exist (no ungrouped sessions)
+	if _, exists := tree.Groups[DefaultGroupPath]; exists {
+		t.Fatalf("precondition failed: default group should not exist before delete")
+	}
+
+	moved := tree.DeleteGroup("experiments")
+
+	if len(moved) != 0 {
+		t.Errorf("expected 0 moved sessions, got %d", len(moved))
+	}
+	if tree.Groups["experiments"] != nil {
+		t.Error("deleted group should be gone")
+	}
+	if _, exists := tree.Groups[DefaultGroupPath]; exists {
+		t.Errorf("default group '%s' should NOT have been created when deleting an empty group", DefaultGroupPath)
+	}
+}
+
 func TestMoveSessionToGroup(t *testing.T) {
 	instances := []*Instance{
 		{ID: "1", Title: "session-1", GroupPath: "source"},
