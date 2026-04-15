@@ -8,25 +8,30 @@ Terminal session manager for AI coding agents. Go + Bubble Tea TUI that manages 
 
 Reliable session management for AI coding agents: users can create, monitor, and control many concurrent agent sessions from anywhere (desktop terminal, mobile browser, web) without losing work or context.
 
-## Current Milestone: v1.6.0 — Watcher Framework
+## Current Milestone: v1.6.0 — Watcher Framework Completion
 
-**Starting point:** v1.5.0 (2026-04-10). v1.5.0 shipped premium web app polish: all P0/P1 bugs fixed, performance optimized (<150 KB gzipped), WCAG AA light theme, automated visual regression + Lighthouse CI, 25 E2E specs. Phase 11 (release) pending.
+**Starting point:** v1.5.4 (local, unpushed — 2026-04-16). v1.5.0 shipped premium web app polish (Phase 11 release pending). v1.5.1–v1.5.4 are local hotfixes (web-terminal resize, underscore input, Ctrl+C detach regression, scrollback contamination, session-persistence, feedback-closeout, per-group claude config). v1.5.4 introduced a CLAUDE.md mandate at repo root forbidding `--no-verify` on source commits.
 
-**Goal:** Add event-driven automation to agent-deck. Watchers listen for external events (email, Slack, webhooks, meeting transcripts) and route them to conductor sessions automatically, turning agent-deck from a tool you drive into a system that listens, routes, and acts on your behalf.
+**Goal:** Close out the watcher framework. Wave A (phases 12–18) shipped the core engine, adapters, CLI, TUI, triage, self-improving routing, and Gmail watcher across 2026-04-10 → 2026-04-11. **Wave B (this milestone, phases 19–23)** adds the missing verification docs for phases 14+15, implements the health alerts bridge (phase 16 from the design spec), reorganizes on-disk state into the conductor-style folder hierarchy, syncs the watcher-creator skill + repo docs to the new layout, ships an end-to-end integration harness, and locks the framework under a CLAUDE.md test-coverage mandate.
 
-**Source spec:** `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
+**Source specs:**
+- `docs/superpowers/specs/2026-04-10-watcher-framework-design.md` (Wave A, original design)
+- `docs/WATCHER-COMPLETION-SPEC.md` (Wave B, this milestone)
 
-**Target features:**
-- Generic watcher subsystem with pluggable adapter interface (webhook, ntfy, Gmail, Slack)
-- Config-driven routing via `clients.json` with wildcard domain matching
-- Watcher engine with event dedup, health tracking, and silence detection
-- CLI: `agent-deck watcher create/start/stop/list/status/test/routes`
-- TUI watcher panel with status indicators, event rates, and quick actions
-- Triage sessions for unknown senders (Claude Code sessions under subscription)
-- Self-improving routing: confirmed decisions auto-add to `clients.json`
-- Migration path from existing bash issue-watcher scripts
-- Watcher-creator skill for conversational watcher setup
-- Health alerts via Telegram/Slack/Discord (reusing conductor notification bridge)
+**Wave A delivered (phases 12–18, code shipped, ledger to be reconciled):**
+- Watcher engine core (adapter/router/health/event+dedup) — Phase 13
+- Webhook + ntfy + GitHub adapters — Phase 14 (no verification doc yet)
+- Slack adapter + `watcher import` migration — Phase 15 (no verification doc yet)
+- CLI (8 subcommands) and TUI watcher panel — Phase 16 (code shipped beyond original plan)
+- Gmail adapter with OAuth2 + Pub/Sub watch renewal — Phase 17
+- Triage sessions, self-improving routing, watcher-creator skill — Phase 18
+
+**Wave B target (this milestone, phases 19–23):**
+- Phase 19 — Verification docs for phases 14+15 (REQ-WF-1, REQ-WF-2)
+- Phase 20 — Health alerts bridge over conductor notification channels (REQ-WF-3)
+- Phase 21 — Watcher folder hierarchy mirroring conductor pattern, with legacy migration (REQ-WF-6)
+- Phase 22 — Skills + docs sync to the new singular `~/.agent-deck/watcher/` layout (REQ-WF-7)
+- Phase 23 — Visual verification harness + CLAUDE.md watcher-test mandate (REQ-WF-5, REQ-WF-4)
 
 ## Requirements
 
@@ -57,21 +62,26 @@ Reliable session management for AI coding agents: users can create, monitor, and
 - ✓ WEB-P0-2: profile switcher shipped as Option B read-only label (single-profile `role="status"`, multi-profile `aria-disabled` listbox) — decision gate resolved: `server.go:79` binds `cfg.Profile` once at `NewServer()`, per-request override out of scope — v1.5.0 Phase 6
 - ✓ WEB-P0-3: session title truncation eliminated (action toolbar converted from in-flow flex to `absolute right-2 top-1/2` overlay, title width 82px → 184px at 1280x800; row height stable at 44px for PERF-K) — v1.5.0 Phase 6
 - ✓ WEB-P0-4 + POL-7: toast stack capped at 3, errors sticky, `ToastHistoryDrawer` persists last 50 to localStorage; prevention layer hides write buttons + `CreateSessionDialog` when `webMutations=false` — v1.5.0 Phase 6
+- ✓ Watcher engine core: `WatcherAdapter` interface (Setup/Listen/Teardown/HealthCheck), `Event` with `DedupKey`, single-writer engine goroutine, `INSERT OR IGNORE` dedup, `HealthTracker` with rolling rate + silence detection — v1.6.0 Wave A Phase 13
+- ✓ Webhook + ntfy + GitHub adapters: `internal/watcher/{webhook,ntfy,github}.go` with HMAC-SHA256 verification, ntfy backoff (2s/2x/30s), 62 tests pass with `-race` — v1.6.0 Wave A Phase 14 (verification doc owed by Wave B Phase 19)
+- ✓ Slack adapter + `watcher import` migration: `internal/watcher/slack.go` 450+ lines, `cmd/agent-deck/watcher_cmd.go` 22KB, atomic merge with `Lstat` symlink rejection, 50+ tests — v1.6.0 Wave A Phase 15 (verification doc owed by Wave B Phase 19)
+- ✓ Watcher CLI (8 subcommands) + TUI panel: `cmd/agent-deck/watcher_cmd.go` covering create/start/stop/list/status/test/routes/import + `install-skill`; `internal/ui/watcher_panel.go` with status indicators and quick actions — v1.6.0 Wave A Phase 16 (shipped beyond original plan)
+- ✓ Gmail adapter: OAuth2 with `ReuseTokenSource`, Pub/Sub `users.Watch()`, watch_expiry persistence + 1hr-pre-expiry renewal — v1.6.0 Wave A Phase 17
+- ✓ Triage sessions + self-improving routing + watcher-creator skill: `internal/watcher/{triage,triage_reaper,triage_prompt,clients_writer}.go`, embedded `watcher-creator` skill, 5/hr rate limit — v1.6.0 Wave A Phase 18
 
-### Active (v1.6.0 scope)
+### Active (v1.6.0 Wave B — completion scope)
 
-Detailed requirements defined in `.planning/REQUIREMENTS.md`.
+Detailed requirements in `.planning/REQUIREMENTS.md` § "v1.6.0 Wave B Completion Requirements".
 
-- [x] Watcher subsystem with pluggable adapter interface — Validated in Phase 13: WatcherAdapter interface (Setup/Listen/Teardown/HealthCheck), AdapterConfig, Event struct with DedupKey
-- [x] Config-driven routing via `clients.json` with wildcard domain matching — Validated in Phase 13: Router.Match() with exact-over-wildcard priority, LoadClientsJSON, LoadFromWatcherDir
-- [x] Watcher engine with event dedup, health tracking, and silence detection — Validated in Phase 13: Engine with single-writer goroutine, eventEnvelope pattern, INSERT OR IGNORE dedup, HealthTracker with rolling rate and silence detection
-- [ ] CLI: `agent-deck watcher create/start/stop/list/status/test/routes`
-- [ ] TUI watcher panel with status indicators, event rates, and quick actions
-- [ ] Triage sessions for unknown senders
-- [ ] Self-improving routing: confirmed decisions auto-add to `clients.json`
-- [ ] Migration path from existing bash issue-watcher scripts
-- [ ] Watcher-creator skill for conversational watcher setup
-- [ ] Health alerts via conductor notification bridge
+Wave A scope (originally tracked as Active) has shipped as code; verification ledger is closed by Wave B Phase 19. Wave A items are listed under Validated below.
+
+- [ ] **REQ-WF-1**: Phase 14 verification doc — webhook + ntfy + GitHub adapters, observable truths with `path:line` citations
+- [ ] **REQ-WF-2**: Phase 15 backfill (PLAN, SUMMARY, VERIFICATION) — Slack adapter + `watcher import`
+- [ ] **REQ-WF-3**: Health alerts bridge (`internal/watcher/health_bridge.go`) — silence/error/teardown triggers, 15-min debounce, opt-in via `[watcher.alerts]` config, six unit tests + integration test
+- [ ] **REQ-WF-6**: Watcher folder hierarchy mirroring `~/.agent-deck/conductor/` — singular `watcher/` dir with per-instance `meta.json`/`state.json`/`task-log.md`/`LEARNINGS.md`, atomic legacy migration with one-cycle symlink fallback
+- [ ] **REQ-WF-7**: Skills + docs sync — embedded `watcher-creator` SKILL.md, repo SKILL.md, README, design-spec addendum, CHANGELOG; new `TestSkillDriftCheck_WatcherCreator` to lock against future drift
+- [ ] **REQ-WF-5**: `scripts/verify-watcher-framework.sh` end-to-end harness — boots ephemeral webhook, posts synthetic event, asserts routing, exits non-zero on failure, runs in <60s on macOS/Linux
+- [ ] **REQ-WF-4**: CLAUDE.md "Watcher framework: mandatory test coverage" section — pinned commands for `internal/watcher/...` + `cmd/agent-deck/... -run "Watcher"`, RFC requirement for removing health bridge / dedup / HMAC verification
 
 ### Out of Scope
 
@@ -158,4 +168,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after milestone v1.6.0 (Watcher Framework) initialization. v1.5.0 mostly complete (5/7 phases, Phase 11 Release pending). v1.6.0 scope defined from brainstorming session and design spec.*
+*Last updated: 2026-04-16 after v1.6.0 Wave B (Watcher Framework Completion) milestone bootstrap. Wave A (phases 12–18) shipped 2026-04-10 → 2026-04-11 with code complete and partial verification ledger. Wave B scope defined from `docs/WATCHER-COMPLETION-SPEC.md`: 7 REQ-WF requirements across 5 new phases (19–23). v1.5.4 CLAUDE.md mandate applies (no `--no-verify` on source commits; metadata commits exempt when hooks no-op).*

@@ -1,13 +1,62 @@
-# Requirements: Agent Deck v1.6.0 — Watcher Framework
+# Requirements: Agent Deck v1.6.0 — Watcher Framework (Waves A + B)
 
-**Defined:** 2026-04-10
+**Defined:** 2026-04-10 (Wave A); 2026-04-16 (Wave B completion)
 **Core Value:** Reliable session management for AI coding agents: users can create, monitor, and control many concurrent agent sessions from anywhere without losing work or context.
 **Milestone target:** v1.6.0
-**Starting point:** v1.5.0
-**Source spec:** `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
-**Research:** `.planning/research/SUMMARY.md` (synthesized from Stack, Features, Architecture, Pitfalls)
+**Starting point:** v1.5.4 (local hotfix series, unpushed)
+**Source specs:**
+- Wave A: `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
+- Wave B: `docs/WATCHER-COMPLETION-SPEC.md`
+**Research:** Wave A research absent from `.planning/research/`; Wave B is brownfield completion (no new research needed)
 
-## v1.6.0 Requirements
+## v1.6.0 Wave B Completion Requirements
+
+Wave B closes out v1.6.0 by adding the verification ledger, the health-alerts bridge, the conductor-style folder hierarchy, the skill-and-docs sync, the integration harness, and the CLAUDE.md test-coverage mandate. Each maps to exactly one Wave B phase (19–23).
+
+### Verification Docs
+
+- [ ] **REQ-WF-1**: Phase 14 verification doc at `.planning/phases/14-simple-adapters-webhook-ntfy-github/14-VERIFICATION.md` covers WebhookAdapter Setup/Listen/Teardown/HealthCheck, NtfyAdapter backoff reconnect (2s/2x/30s), GitHubAdapter HMAC-SHA256 constant-time verification, integration test wiring 3 adapters through engine + dedup + routing, and 62 watcher tests passing with `-race`. Every claim cites `path:line`.
+- [ ] **REQ-WF-2**: Phase 15 backfill: `.planning/phases/15-slack-adapter-and-import/{15-01-PLAN.md, 15-01-SUMMARY.md, 15-VERIFICATION.md}` reconstructed from `slack.go` + `watcher_cmd.go` + test evidence. Verification covers Slack adapter interface implementation, event normalization, `slack:{CHANNEL_ID}` channel routing, and `watcher import` atomic merge with `Lstat` symlink rejection.
+
+### Health Alerts Bridge
+
+- [ ] **REQ-WF-3**: `internal/watcher/health_bridge.go` subscribes to engine health signal and fans alerts to the conductor notification bridge (Telegram/Slack/Discord). Triggers: `silence_detected`, `error_threshold_exceeded`, `adapter_teardown_unexpected`. Debounce: ≤1 alert per (watcher × trigger) per 15 min. Opt-in via `[watcher.alerts]` config (`enabled` bool + `channels` list). Six unit tests in `internal/watcher/health_bridge_test.go` (silence, error-threshold, debounce, disabled, downstream-failure-resilience, teardown-cancels-pending) plus one integration test wiring a mock adapter with forced silence.
+
+### Folder Hierarchy
+
+- [ ] **REQ-WF-6**: Reorganize watcher state to mirror conductor pattern. New layout: `~/.agent-deck/watcher/{CLAUDE.md, POLICY.md, LEARNINGS.md, clients.json, <name>/{meta.json, state.json, task-log.md, LEARNINGS.md}}`. New files: `internal/watcher/layout.go` (LayoutDir, WatcherDir, MigrateLegacyWatchersDir), `internal/watcher/state.go` (WatcherState struct, LoadState, SaveState), `internal/watcher/event_log.go` (AppendEventLog). Atomic `os.Rename` migration of legacy `~/.agent-deck/watchers/` → `watcher/` with one-cycle compatibility symlink. `agent-deck watcher list --json` exposes new per-watcher state fields (`last_event_ts`, `error_count`, `health_status`). Six unit tests in `layout_test.go` plus one integration test asserting three events produce three `task-log.md` lines and three `state.json` updates.
+
+### Skills + Docs Sync
+
+- [ ] **REQ-WF-7**: Update every user-facing surface to the new singular `~/.agent-deck/watcher/` path. Surfaces: `cmd/agent-deck/assets/skills/watcher-creator/SKILL.md` (≥6 known references at lines 38, 44, 168, 169, 215, 231, 258), `cmd/agent-deck/assets/skills/watcher-creator/README.md`, `skills/agent-deck/SKILL.md`, top-level `README.md`, `CHANGELOG.md` v1.6.0 entry, `docs/superpowers/specs/2026-04-10-watcher-framework-design.md` postscript "v1.6.0 layout addendum". New test `TestSkillDriftCheck_WatcherCreator` in `cmd/agent-deck/watcher_cmd_test.go` reads embedded SKILL.md and asserts no `watchers/` matches. CLAUDE.md mandate (REQ-WF-4) extended with "any PR touching layout.go or path resolution MUST also update SKILL.md and README in the same commit."
+
+### Integration Harness + Mandate
+
+- [ ] **REQ-WF-5**: `scripts/verify-watcher-framework.sh` boots a webhook adapter on an ephemeral port, posts a synthetic event, asserts router reaches the right group, prints `[PASS]` per step, exits non-zero on any failure. Runs end-to-end on macOS + Linux in <60s.
+- [ ] **REQ-WF-4**: CLAUDE.md (repo root) "Watcher framework: mandatory test coverage" section. Pinned commands: `go test ./internal/watcher/... -race -count=1 -timeout 120s` and `go test ./cmd/agent-deck/... -run "Watcher" -race -count=1` on every PR touching `internal/watcher/**`, `cmd/agent-deck/watcher_cmd*.go`, `internal/ui/watcher_panel.go`, or `internal/statedb/statedb.go` watcher rows. Removing health alerts, disabling dedup, or weakening HMAC verification requires an RFC.
+
+## Wave B Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| REQ-WF-1 | Phase 19 | Pending |
+| REQ-WF-2 | Phase 19 | Pending |
+| REQ-WF-3 | Phase 20 | Pending |
+| REQ-WF-6 | Phase 21 | Pending |
+| REQ-WF-7 | Phase 22 | Pending |
+| REQ-WF-5 | Phase 23 | Pending |
+| REQ-WF-4 | Phase 23 | Pending |
+
+**Wave B coverage:** 7 / 7 mapped. 0 unmapped.
+
+---
+
+## v1.6.0 Wave A — Watcher Framework (original requirements, retained for history)
+
+**Defined:** 2026-04-10
+**Source spec:** `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
+
+**Note (2026-04-16):** Wave A code is fully shipped per `docs/WATCHER-COMPLETION-SPEC.md` audit (engine, all adapters including Gmail, CLI, TUI, triage, self-improving routing, watcher-creator skill). The Pending statuses below reflect the verification *ledger* lag — code exists, but per-requirement verification entries were not closed before this completion milestone began. Wave B Phase 19 (REQ-WF-1, REQ-WF-2) writes the verification docs that close phases 14 and 15. Phase 16's CLI/TUI requirements ledger is similarly closed by code-evidence references in those docs.
 
 Requirements for the watcher framework milestone. Each maps to exactly one phase.
 
@@ -142,10 +191,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTEL-04 | Phase 18 | Pending |
 
 **Coverage:**
-- v1.6.0 requirements: 34 total
-- Mapped to phases: 34 (roadmap created 2026-04-10)
-- Unmapped: 0
+- Wave A v1.6.0 requirements: 34 total
+- Mapped to Wave A phases: 34 (12–18)
+- Wave B completion requirements: 7 total (REQ-WF-1..7)
+- Mapped to Wave B phases: 7 (19–23)
+- **Total v1.6.0 requirements: 41 mapped, 0 unmapped**
 
 ---
-*Requirements defined: 2026-04-10 from design spec with research from `.planning/research/SUMMARY.md`*
-*Last updated: 2026-04-10 after roadmap creation — all 34 requirements mapped to phases 12-18*
+*Wave A requirements defined: 2026-04-10 from design spec*
+*Wave B requirements defined: 2026-04-16 from `docs/WATCHER-COMPLETION-SPEC.md`*
+*Last updated: 2026-04-16 after Wave B completion-milestone bootstrap — Wave A code shipped but verification ledger to be closed by Wave B Phase 19*

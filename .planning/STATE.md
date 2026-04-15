@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5.0
-milestone_name: "**Goal:** Ship v1.5.0 with all gates green — clean build, Go 1.24.0 verified, visual verification pass, macOS smoke test, real-device mobile test, comprehensive changelog. Locked by CLAUDE.md release rules."
-status: executing
-stopped_at: Phase 18 VERIFIED COMPLETE — all 4 INTEL requirements delivered, 30 tests green, clean build with Go 1.24.0. 3 manual verifications pending (real Claude triage, skill UX, real state.db migration).
-last_updated: "2026-04-11T17:45:57.870Z"
-last_activity: 2026-04-11
+milestone: v1.6.0
+milestone_name: "v1.6.0 Watcher Framework Completion (Wave B). Wave A (phases 12-18) shipped. Wave B (phases 19-23) closes the verification ledger, adds health alerts bridge, reorganizes watcher folder hierarchy, syncs skills + docs, and locks the framework under a CLAUDE.md test-coverage mandate."
+status: bootstrapped
+stopped_at: Wave B milestone bootstrap complete — PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md updated. 5 phases (19-23) defined. Awaiting conductor to spawn gsd-v160-plan-1 for Phase 19 planning. NOT auto-planning per conductor instruction.
+last_updated: "2026-04-16T00:00:00.000Z"
+last_activity: 2026-04-16
 progress:
-  total_phases: 14
-  completed_phases: 7
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 7
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,42 +20,57 @@ progress:
 
 **Project:** Agent Deck
 **Repository:** /home/ashesh-goplani/agent-deck
-**Branch:** main
-**Current version:** v1.5.0
+**Worktree:** /home/ashesh-goplani/agent-deck/.worktrees/watcher-completion
+**Branch:** feat/watcher-completion (off main after v1.5.4 merges locally)
+**Current version:** v1.5.4 (local hotfix series, unpushed)
 **Target version:** v1.6.0
 
-See `/home/ashesh-goplani/agent-deck/.planning/PROJECT.md` for full project context.
-See `/home/ashesh-goplani/agent-deck/.planning/ROADMAP.md` for the v1.6.0 roadmap.
-See `/home/ashesh-goplani/agent-deck/.planning/REQUIREMENTS.md` for requirements and phase mappings.
+See `.planning/PROJECT.md` for full project context.
+See `.planning/ROADMAP.md` for the v1.6.0 roadmap (Waves A + B).
+See `.planning/REQUIREMENTS.md` for requirements and phase mappings.
 
-## Milestone: v1.6.0 — Watcher Framework
+## Milestone: v1.6.0 — Watcher Framework Completion (Wave B)
 
-**Goal:** Add event-driven automation to agent-deck. Watchers listen for external events (email, Slack, webhooks, meeting transcripts) and route them to conductor sessions automatically.
+**Goal:** Close out the watcher framework. Wave A (phases 12-18) shipped engine + adapters + CLI + TUI + triage. Wave B (phases 19-23) writes verification docs, ships the health alerts bridge, reorganizes on-disk state to mirror the conductor folder pattern, syncs skills + repo docs, ships an integration harness, and locks the framework under a CLAUDE.md mandate.
 
-**Source spec:** `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
-**Starting point:** v1.5.0 (premium web app polish milestone)
+**Source specs:**
+- Wave A: `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
+- Wave B: `docs/WATCHER-COMPLETION-SPEC.md`
+**Starting point:** v1.5.4 (local hotfix series)
+**Branch:** feat/watcher-completion (already checked out in this worktree)
 
 ## Current Position
 
-Phase: 18 (Intelligence (Triage and Self-Improving Routing)) — EXECUTING
-Plan: 2 of 6
-Status: Ready to execute
-Last activity: 2026-04-11
+Phase: 19 (Verification Docs - Phases 14 + 15) - PLANNED, NOT STARTED
+Plan: 0 of 2
+Status: Awaiting conductor to spawn `gsd-v160-plan-1` for Phase 19 planning (per conductor instruction: "Do NOT auto-plan")
+Last activity: 2026-04-16 (Wave B bootstrap)
 
 ## Phase Progress
 
+### Wave A (v1.6.0 build, code shipped 2026-04-10 → 2026-04-11, ledger closed by Wave B Phase 19)
+
+| # | Phase | Status | Requirements |
+|---|-------|--------|--------------|
+| 12 | Schema & Config | Code shipped (SchemaVersion 5) | SCHEMA-01..06 |
+| 13 | Engine Core | VERIFIED COMPLETE (`13-VERIFICATION.md`, 7/7 truths) | ENGINE-01..07 |
+| 14 | Simple Adapters (Webhook + ntfy + GitHub) | Code shipped, 62 tests pass with -race; verification doc owed (REQ-WF-1) | ADAPT-01, ADAPT-02, ADAPT-03 |
+| 15 | Slack Adapter + watcher import | Code shipped, 50+ tests; PLAN/SUMMARY/VERIFICATION owed (REQ-WF-2) | ADAPT-04, CLI-07 |
+| 16 | CLI + TUI Integration | Code shipped beyond plan (8 CLI subcommands + watcher panel); health alerts deferred to Wave B Phase 20 | CLI-01..06, TUI-01, TUI-02, TUI-04 |
+| 17 | Gmail Adapter | Code shipped (~60KB) with OAuth2 + Pub/Sub watch renewal | ADAPT-05, ADAPT-06 |
+| 18 | Intelligence (Triage + Self-Improving Routing) | Code shipped: triage sessions, atomic clients.json updates, watcher-creator skill | INTEL-01..04 |
+
+### Wave B (v1.6.0 completion, this milestone)
+
 | # | Phase | Status | Requirements | Plans |
 |---|-------|--------|--------------|-------|
-| 5 | Critical Regressions | COMPLETE (shipped in v1.4.1) | 6 (REG-01..06 ✓) | — |
-| 6 | Web App Critical P0 Bugs | COMPLETE 2026-04-08 (5/5 plans, WEB-P0-1 ✓ WEB-P0-2 ✓ WEB-P0-3 ✓ WEB-P0-4 mitigation ✓ WEB-P0-4 prevention ✓ + POL-7 ✓) | 4 (WEB-P0-1..4 all ✓) | 5 |
-| 7 | Web App P1 Layout Bugs | COMPLETE 2026-04-09 (4/4 plans, WEB-P1-1 ✓ WEB-P1-2 ✓ WEB-P1-3 ✓ WEB-P1-4 ✓ WEB-P1-5 ✓) | 5 (WEB-P1-1..5 all ✓) | 4 |
-| 8 | Performance (Premium Feel) | COMPLETE 2026-04-09 (5/5 plans, PERF-A..K all ✓) | 11 (PERF-A..K) | 5 |
-| 9 | Polish (Premium UX) | COMPLETE 2026-04-09 (4/4 plans, POL-1 ✓ POL-2 ✓ POL-3 ✓ POL-4 ✓ POL-5 ✓ POL-6 ✓ POL-7 ✓) | 7 (POL-1..7 all ✓) | 4 |
-| 10 | Automated Testing | COMPLETE 2026-04-10 (4/4 plans, TEST-A ✓ TEST-B ✓ TEST-C ✓ TEST-D ✓ TEST-E ✓) | 5 (TEST-A..E all ✓) | 4 |
-| 11 | Release v1.5.0 | Planned (3 plans: 11-01 pre-release verify, 11-02 tag+ship+changelog, 11-03 real-device mobile) | 5 (REL-1..5) | 3 |
+| 19 | Verification Docs (Phases 14 + 15) | Planned, awaiting plan spawn | REQ-WF-1, REQ-WF-2 | 2 |
+| 20 | Health Alerts Bridge | Planned (depends on 19) | REQ-WF-3 | 1 (RED+GREEN tasks) |
+| 21 | Watcher Folder Hierarchy | Planned (depends on 19) | REQ-WF-6 | 1 (RED+GREEN+migration tasks) |
+| 22 | Skills + Docs Sync | Planned (depends on 21) | REQ-WF-7 | 1 |
+| 23 | Integration Harness + CLAUDE.md Mandate | Planned (depends on 20, 21, 22) | REQ-WF-5, REQ-WF-4 | 2 |
 
-**Total active plans across Phases 6-11:** 25
-**Total active requirements:** 37
+**Wave B totals:** 5 phases, 7 plans, 7 requirements (all mapped, 100% coverage).
 
 ## Accumulated Context
 
@@ -270,15 +285,32 @@ From `.planning/config.json`:
 
 ## Next Action
 
-Phase 7 is COMPLETE. 10 commits live on local main, NOT pushed (per HARD RULES — user owns push/PR/merge/tag). Next: Phase 8 (Performance / Premium Feel — 11 PERF requirements across 5 plans). Phase 8 PERF-K virtualization is now unblocked because Phase 7 plan 03 stabilized SessionRow height at exactly 40 px. Recommended next command in a fresh session: `/gsd:plan-phase 8`.
+**Wave B milestone bootstrapped 2026-04-16.** Awaiting conductor to spawn `gsd-v160-plan-1` for Phase 19 (Verification Docs) planning. Per conductor instruction: **do NOT auto-plan** — this session's job ends with the roadmap.
+
+When conductor spawns the planner, recommended invocation:
+```
+/gsd:plan-phase 19
+```
+
+This will produce `.planning/phases/19-verification-docs/{19-01-PLAN.md, 19-02-PLAN.md}` for the two backfill verification docs.
 
 ## Last session
 
-- **Stopped at:** Phase 18 VERIFIED COMPLETE — all 4 INTEL requirements delivered, 30 tests green, clean build with Go 1.24.0. 3 manual verifications pending (real Claude triage, skill UX, real state.db migration).
-- **Timestamp:** 2026-04-09T17:42:25Z
-- **Duration:** ~20 min (tmux-hosted test server avoided 09-02's `script -qfc` debug detour)
-- **Commits:** 03b191f (test(09-01) failing specs + pw-p9-plan1 config), 7f91b26 (feat(09-01) POL-1 skeleton loader), 44d38e2 (fix(09-01) POL-2 GroupRow fade + POL-4 density)
-- **Key issues handled in-flight:** (1) Playwright `baseURL: '/?token=test'` + `page.goto('/')` clobbers the query string — each test must use `page.goto('/?token=test')` explicitly; (2) stale embed.FS bundle after source edit — `make build` alone is insufficient, must run `go generate ./internal/web/...` first to refresh `dist/main.<hash>.js`; (3) test server TTY requirement — wrapped in `tmux new-session -d -s adeck-p9-test` which provides a real pty, cleaner than `script -qfc` from 09-02.
+- **Stopped at:** Wave B milestone bootstrap complete — PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md updated to reflect v1.6.0 Wave B (Watcher Framework Completion) scope.
+- **Timestamp:** 2026-04-16T00:00:00Z
+- **Duration:** ~15 min (single session, autonomous bootstrap from `docs/WATCHER-COMPLETION-SPEC.md`)
+- **Artifacts produced:**
+  - PROJECT.md: Current Milestone block reframed for Wave B; Active reqs replaced with REQ-WF-1..7; Wave A items moved to Validated with code-shipped notes
+  - REQUIREMENTS.md: New "v1.6.0 Wave B Completion Requirements" section (REQ-WF-1..7) prepended; Wave A retained for history with shipped-but-unverified note
+  - ROADMAP.md: Replaced (was v1.5.1 patch roadmap on this worktree). New v1.6.0 roadmap groups Wave A in `<details>` collapsed and lays out 5 Wave B phases (19-23) with TDD plans
+  - STATE.md: Frontmatter and body retargeted from v1.5.0 to v1.6.0 Wave B; phase progress table split Wave A / Wave B
+- **Key decisions in-flight:**
+  1. **Phase numbering: continuous 19-23.** Roadmap template guideline says "never restart at 01"; existing watcher dirs are 13/14/15. Wave B starts at 19. Spec's `test(16-01)`-style commit prefixes were aspirational; actual prefixes will be `test(19-01)` etc.
+  2. **Verification docs land in existing `.planning/phases/14-...` and `.planning/phases/15-...` dirs**, not `.planning.archived/phases/` (spec was ambiguous; co-locating verification with the phase dir is cleaner and avoids creating new archive paths during a completion milestone).
+  3. **Spec's 7 sub-phases collapsed to 5 GSD phases** per conductor's "5 phases estimated" hint and project convention of bundling TDD RED+GREEN within a single phase. Spec phases 2+3 → Wave B Phase 20 (one plan, two tasks). Spec phases 6+7 → Wave B Phase 23 (two plans).
+  4. **Did NOT delete or archive existing 13/14/15 phase dirs** — they hold shipped Wave A code + tests and remain authoritative for the verification docs Phase 19 will write against.
+  5. **Did NOT run `gsd-tools phases clear`** despite workflow step 6 — that would have destroyed Wave A artifacts.
+- **Hard rules honored:** No push, no tag, no PR, no merge. No Claude attribution in commits. No `--no-verify` (commit pending and will use signed `Committed by Ashesh Goplani` per v1.5.4 mandate).
 
 ## Performance Metrics
 
