@@ -8,11 +8,19 @@ Terminal session manager for AI coding agents. Go + Bubble Tea TUI that manages 
 
 Reliable session management for AI coding agents: users can create, monitor, and control many concurrent agent sessions from anywhere (desktop terminal, mobile browser, web) without losing work or context.
 
-## Current Milestone: v1.6.0 — Watcher Framework
+## Current Milestone: v1.5.4 — Per-group Claude Config
 
-**Starting point:** v1.5.0 (2026-04-10). v1.5.0 shipped premium web app polish: all P0/P1 bugs fixed, performance optimized (<150 KB gzipped), WCAG AA light theme, automated visual regression + Lighthouse CI, 25 E2E specs. Phase 11 (release) pending.
+**Starting point:** v1.5.3 (commit `ee7f29e` on `fix/feedback-closeout`). v1.5.3 completed feedback closeout and added a repo-root `CLAUDE.md` mandate forbidding `--no-verify` — carried forward to this milestone.
 
-**Goal:** Add event-driven automation to agent-deck. Watchers listen for external events (email, Slack, webhooks, meeting transcripts) and route them to conductor sessions automatically, turning agent-deck from a tool you drive into a system that listens, routes, and acts on your behalf.
+**Worktree isolation:** v1.5.4 runs on branch `fix/per-group-claude-config-v154` (forked from upstream PR #578 HEAD `fa9971e` by @alec-pinson). Main's `.planning/` tracks v1.6.0 (Watcher Framework). Phase numbering here restarts at `1`; phase dirs `13-`, `14-`, `15-` in `.planning/phases/` are v1.6.0 artifacts, left untouched.
+
+**Goal:** Accept external PR #578 (`feat/per-group-config` by @alec-pinson) as the base and close the gaps that block adoption for the user's conductor use case — prove per-group `CLAUDE_CONFIG_DIR` injection works for custom-command sessions (conductors), prove `env_file` is sourced before `claude` exec, and ship regression tests + a visual harness so neither semantics regress.
+
+**Source spec:** `docs/PER-GROUP-CLAUDE-CONFIG-SPEC.md` (commit `4ade7f8`).
+
+**Base contribution:** PR #578 by @alec-pinson. At least one commit in this milestone must carry attribution: "Base implementation by @alec-pinson in PR #578."
+
+**Prior milestone (carried over):** v1.6.0 — Watcher Framework
 
 **Source spec:** `docs/superpowers/specs/2026-04-10-watcher-framework-design.md`
 
@@ -58,9 +66,21 @@ Reliable session management for AI coding agents: users can create, monitor, and
 - ✓ WEB-P0-3: session title truncation eliminated (action toolbar converted from in-flow flex to `absolute right-2 top-1/2` overlay, title width 82px → 184px at 1280x800; row height stable at 44px for PERF-K) — v1.5.0 Phase 6
 - ✓ WEB-P0-4 + POL-7: toast stack capped at 3, errors sticky, `ToastHistoryDrawer` persists last 50 to localStorage; prevention layer hides write buttons + `CreateSessionDialog` when `webMutations=false` — v1.5.0 Phase 6
 
-### Active (v1.6.0 scope)
+### Active (v1.5.4 scope)
 
 Detailed requirements defined in `.planning/REQUIREMENTS.md`.
+
+- [ ] **CFG-01** (REQ-1, P0): PR #578 config schema + lookup priority (env > group > profile > global > default); cache invalidation via `ClearUserConfigCache()`
+- [ ] **CFG-02** (REQ-2, P0): Custom-command (conductor) sessions receive `CLAUDE_CONFIG_DIR` from group override even when `Instance.Command` is non-empty
+- [ ] **CFG-03** (REQ-3, P0): `[groups."<name>".claude] env_file` is `source`d before `claude` exec (supports `.envrc` and flat `KEY=VALUE`)
+- [ ] **CFG-04** (REQ-4, P0): Six named regression tests in `internal/session/pergroupconfig_test.go` (all green, independently runnable, `-race -count=1`)
+- [ ] **CFG-05** (REQ-5, P1): Visual harness `scripts/verify-per-group-claude-config.sh` — two groups, two sessions, pass/fail table, exit 0 on success
+- [ ] **CFG-06** (REQ-6, P0): Documentation — `README.md` subsection, `CLAUDE.md` one-liner, `CHANGELOG.md [Unreleased] > Added`, attribution commit referencing @alec-pinson
+- [ ] **CFG-07** (REQ-7, P2): Observability — one-line spawn log `claude config resolution: session=<id> group=<g> resolved=<path> source=<env|group|profile|global|default>`
+
+### v1.6.0 — Watcher Framework (deferred on this branch)
+
+The v1.6.0 scope is tracked on `main`. It does NOT progress on this branch. Do not touch `.planning/phases/13-*`, `14-*`, `15-*` or `internal/watcher/*` here.
 
 - [x] Watcher subsystem with pluggable adapter interface — Validated in Phase 13: WatcherAdapter interface (Setup/Listen/Teardown/HealthCheck), AdapterConfig, Event struct with DedupKey
 - [x] Config-driven routing via `clients.json` with wildcard domain matching — Validated in Phase 13: Router.Match() with exact-over-wildcard priority, LoadClientsJSON, LoadFromWatcherDir
@@ -139,6 +159,8 @@ Detailed requirements defined in `.planning/REQUIREMENTS.md`.
 | Pure Go watcher layer (no LLM in routing) | Managed Agents and Agent SDK require API key billing, incompatible with Max subscription. Config-driven routing handles 95%+ of cases at zero cost. | — Pending (v1.6.0) |
 | Extend issue-watcher pattern into Go subsystem | Existing bash scripts (handle-issue.sh, handle-slack-channel.sh) prove the architecture works. Go subsystem adds type safety, atomicity, TUI visibility, and health monitoring. | — Pending (v1.6.0) |
 | Conductor pattern as blueprint for watchers | Watchers follow conductor's filesystem layout (meta.json), statedb persistence, CLI dispatch, and TUI rendering. 65-70% infrastructure reuse. | — Pending (v1.6.0) |
+| v1.5.4: Accept PR #578 by @alec-pinson as base, add gap-closing work additively | PR #578 solves config schema cleanly. The user's conductor case needs custom-command injection + env_file sourcing + regression tests — all additive on top of #578 with attribution. | — Pending (v1.5.4) |
+| v1.5.4: Phase numbering restarts at 1 on this worktree | Branch is forked from v1.5.3 (`ee7f29e`), independent of main's v1.6.0 track (phases 13+). Self-contained numbering avoids ambiguity in commit trailers. | ✓ Locked |
 
 ## Evolution
 
@@ -158,4 +180,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after milestone v1.6.0 (Watcher Framework) initialization. v1.5.0 mostly complete (5/7 phases, Phase 11 Release pending). v1.6.0 scope defined from brainstorming session and design spec.*
+*Last updated: 2026-04-15 after milestone v1.5.4 (Per-group Claude Config) initialization on worktree branch `fix/per-group-claude-config-v154`. Scope derived from `docs/PER-GROUP-CLAUDE-CONFIG-SPEC.md` (`4ade7f8`). Base: upstream PR #578 by @alec-pinson.*
