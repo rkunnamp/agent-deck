@@ -143,6 +143,14 @@ type Instance struct {
 	// Used to detect pending MCPs (added after session start) and stale MCPs (removed but still running)
 	LoadedMCPNames []string `json:"loaded_mcp_names,omitempty"`
 
+	// Channels are Claude Code plugin-channel ids (e.g. "plugin:telegram@user/repo").
+	// When non-empty on a claude session, buildClaudeExtraFlags emits
+	// `--channels <csv>` so the session subscribes to inbound plugin messages.
+	// Without this flag the channel plugin runs as a plain MCP (tools only,
+	// no inbound delivery) which silently drops Telegram/Discord/Slack
+	// messages on conductor restart.
+	Channels []string `json:"channels,omitempty"`
+
 	// ToolOptions stores tool-specific launch options (Claude, Codex, Gemini, etc.)
 	// JSON structure: {"tool": "claude", "options": {...}}
 	ToolOptionsJSON json.RawMessage `json:"tool_options,omitempty"`
@@ -673,6 +681,13 @@ func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
 		if opts.UseTeammateMode {
 			flags = append(flags, "--teammate-mode tmux")
 		}
+	}
+
+	// Plugin channels: subscribe the claude session to inbound messages from
+	// each listed plugin channel. Persisted on Instance.Channels and refreshed
+	// on every Start/Restart/resume because every command-build flows here.
+	if len(i.Channels) > 0 {
+		flags = append(flags, fmt.Sprintf("--channels %s", strings.Join(i.Channels, ",")))
 	}
 
 	if len(flags) == 0 {
@@ -4287,9 +4302,6 @@ func (i *Instance) buildClaudeResumeCommand() string {
 		userConfig, _ := LoadUserConfig()
 		opts = NewClaudeOptions(userConfig)
 	}
-	dangerousMode := opts.SkipPermissions
-	autoMode := opts.AutoMode
-	allowDangerousMode := opts.AllowSkipPermissions
 
 	// Check if session has actual conversation data
 	// If not, use --session-id instead of --resume to avoid "No conversation found" error
@@ -4319,26 +4331,24 @@ func (i *Instance) buildClaudeResumeCommand() string {
 			slog.String("reason", "session_id_flag_no_jsonl"))
 	}
 
-	// Build permission flag (--dangerously-skip-permissions wins over --permission-mode auto wins over --allow-...)
-	dangerousFlag := ""
-	if dangerousMode {
-		dangerousFlag = " --dangerously-skip-permissions"
-	} else if autoMode {
-		dangerousFlag = " --permission-mode auto"
-	} else if allowDangerousMode {
-		dangerousFlag = " --allow-dangerously-skip-permissions"
-	}
+	// Delegate flag assembly to buildClaudeExtraFlags so restart stays in
+	// lockstep with the start path. Handles permission modes (dangerous /
+	// auto / allow), --add-dir for parented sessions, and --channels for
+	// plugin channel subscriptions. Without this, any flag added to
+	// buildClaudeExtraFlags silently disappears on session restart — the
+	// phase-5 loopback regression (TestResumeCommandAppendsChannels).
+	extraFlags := i.buildClaudeExtraFlags(opts)
 
 	// CLAUDE_SESSION_ID is propagated via host-side SetEnvironment (SyncSessionIDsToTmux)
 	// after the tmux session is restarted. No inline tmux set-environment in the shell string
 	// (which silently fails inside Docker sandbox containers).
 	if useResume {
 		return fmt.Sprintf("%s%s%s --resume %s%s",
-			envPrefix, configDirPrefix, claudeCmd, i.ClaudeSessionID, dangerousFlag)
+			envPrefix, configDirPrefix, claudeCmd, i.ClaudeSessionID, extraFlags)
 	}
 	// Session was never interacted with - use --session-id to create fresh session.
 	return fmt.Sprintf("%s%s%s --session-id %s%s",
-		envPrefix, configDirPrefix, claudeCmd, i.ClaudeSessionID, dangerousFlag)
+		envPrefix, configDirPrefix, claudeCmd, i.ClaudeSessionID, extraFlags)
 }
 
 // SetGeminiModel sets the Gemini model for this session and triggers a restart if running.

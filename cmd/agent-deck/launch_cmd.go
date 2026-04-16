@@ -47,6 +47,15 @@ func handleLaunch(profile string, args []string) {
 		return nil
 	})
 
+	// Plugin channel flag - can be specified multiple times; requires -c claude.
+	// Mirrors handleAdd's --channel; both routes feed Instance.Channels which
+	// buildClaudeExtraFlags emits as --channels <csv> on every Start/Restart.
+	var channelFlags []string
+	fs.Func("channel", "Plugin channel id (can specify multiple times); requires -c claude", func(s string) error {
+		channelFlags = append(channelFlags, s)
+		return nil
+	})
+
 	// Resume session flag
 	resumeSession := fs.String("resume-session", "", "Claude session ID to resume")
 
@@ -67,6 +76,7 @@ func handleLaunch(profile string, args []string) {
 		fmt.Println("  agent-deck launch . -c claude -m \"Explain this codebase\"")
 		fmt.Println("  agent-deck launch /path/to/project -t \"My Agent\" -c claude -g work")
 		fmt.Println("  agent-deck launch . -c claude --mcp memory -m \"Research topic X\"")
+		fmt.Println("  agent-deck launch . -c claude --channel plugin:telegram@user/repo -m \"Listen for messages\"")
 		fmt.Println("  agent-deck launch . -c claude -m \"Fix bug\" --no-wait")
 		fmt.Println("  agent-deck launch . -c \"codex --dangerously-bypass-approvals-and-sandbox\"")
 		fmt.Println("  agent-deck launch . -g ard --no-parent -c claude -m \"Run review\"")
@@ -272,6 +282,15 @@ func handleLaunch(profile string, args []string) {
 	if sessionCommandInput != "" {
 		newInstance.Tool = firstNonEmpty(sessionCommandTool, detectTool(sessionCommandInput))
 		newInstance.Command = sessionCommandResolved
+	}
+
+	// Apply --channel flags (claude only — channels is a Claude Code CLI flag).
+	if len(channelFlags) > 0 {
+		if newInstance.Tool != "claude" {
+			out.Error("--channel only supported for claude sessions (use -c claude); requires --channels on the claude binary", ErrCodeInvalidOperation)
+			os.Exit(1)
+		}
+		newInstance.Channels = channelFlags
 	}
 
 	if sessionWrapperResolved != "" {

@@ -52,6 +52,7 @@ type jsonInstanceData struct {
 	Notes            string          `json:"notes,omitempty"`
 	ToolOptionsJSON  json.RawMessage `json:"tool_options,omitempty"`
 	LoadedMCPNames   []string        `json:"loaded_mcp_names,omitempty"`
+	Channels         []string        `json:"channels,omitempty"`
 	Sandbox          json.RawMessage `json:"sandbox,omitempty"`
 	SandboxContainer string          `json:"sandbox_container,omitempty"`
 }
@@ -80,6 +81,7 @@ type toolDataBlob struct {
 	LatestPrompt       string          `json:"latest_prompt,omitempty"`
 	Notes              string          `json:"notes,omitempty"`
 	LoadedMCPNames     []string        `json:"loaded_mcp_names,omitempty"`
+	Channels           []string        `json:"channels,omitempty"`
 	ToolOptions        json.RawMessage `json:"tool_options,omitempty"`
 	Sandbox            json.RawMessage `json:"sandbox,omitempty"`
 	SandboxContainer   string          `json:"sandbox_container,omitempty"`
@@ -216,6 +218,7 @@ func MarshalToolData(
 	sshHost string, sshRemotePath string,
 	multiRepoEnabled bool, additionalPaths []string,
 	multiRepoTempDir string, multiRepoWorktrees []MultiRepoWorktreeData,
+	channels []string,
 ) json.RawMessage {
 	td := toolDataBlob{
 		ClaudeSessionID:   claudeSessionID,
@@ -227,6 +230,7 @@ func MarshalToolData(
 		LatestPrompt:      latestPrompt,
 		Notes:             notes,
 		LoadedMCPNames:    loadedMCPNames,
+		Channels:          channels,
 		ToolOptions:       toolOptionsJSON,
 		Sandbox:           sandboxJSON,
 		SandboxContainer:  sandboxContainer,
@@ -269,6 +273,7 @@ func UnmarshalToolData(data json.RawMessage) (
 	sshHost string, sshRemotePath string,
 	multiRepoEnabled bool, additionalPaths []string,
 	multiRepoTempDir string, multiRepoWorktrees []MultiRepoWorktreeData,
+	channels []string,
 ) {
 	if len(data) == 0 {
 		return
@@ -298,6 +303,7 @@ func UnmarshalToolData(data json.RawMessage) (
 	latestPrompt = td.LatestPrompt
 	notes = td.Notes
 	loadedMCPNames = td.LoadedMCPNames
+	channels = td.Channels
 	toolOptionsJSON = td.ToolOptions
 	sandboxJSON = td.Sandbox
 	sandboxContainer = td.SandboxContainer

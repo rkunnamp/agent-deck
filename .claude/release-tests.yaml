@@ -1,0 +1,125 @@
+version: 1
+tests:
+- id: ch-support-append-channels
+  added: 2026-04-16
+  task: ch-support
+  file: internal/session/channels_test.go
+  test_name: TestStartCommandAppendsChannels
+  purpose: buildClaudeCommand emits --channels <csv> when Instance.Channels is set
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestStartCommandAppendsChannels -count=1
+      -v
+    expected: pass
+- id: ch-support-omit-when-empty
+  added: 2026-04-16
+  task: ch-support
+  file: internal/session/channels_test.go
+  test_name: TestStartCommandOmitsChannelsWhenEmpty
+  purpose: "Negative control \u2014 empty Channels emits no --channels flag (prevents\
+    \ empty-csv bug)"
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestStartCommandOmitsChannelsWhenEmpty
+      -count=1 -v
+    expected: pass
+- id: ch-support-restart-persist
+  added: 2026-04-16
+  task: ch-support
+  file: internal/session/channels_test.go
+  test_name: TestChannelsRestartPersist
+  purpose: Channels survive JSON round-trip; rebuilt command from revived instance
+    still has --channels (guards against restart-drops-channels bug)
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestChannelsRestartPersist -count=1
+      -v
+    expected: pass
+- id: ch-support-add-flag
+  added: 2026-04-16
+  task: ch-support
+  file: cmd/agent-deck/channels_cmd_test.go
+  test_name: TestAddChannelFlag
+  purpose: 'CLI: ''agent-deck add --channel <id>'' (repeatable) persists channels
+    via SQLite round-trip'
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./cmd/agent-deck/ -run TestAddChannelFlag -count=1 -timeout 90s
+      -v
+    expected: pass
+- id: ch-support-session-set
+  added: 2026-04-16
+  task: ch-support
+  file: cmd/agent-deck/channels_cmd_test.go
+  test_name: TestSessionSetChannels
+  purpose: 'CLI: ''agent-deck session set <id> channels <csv>'' persists via SQLite
+    round-trip'
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./cmd/agent-deck/ -run TestSessionSetChannels -count=1 -timeout
+      90s -v
+    expected: pass
+- id: ch-support-only-for-claude
+  added: 2026-04-16
+  task: ch-support
+  file: cmd/agent-deck/channels_cmd_test.go
+  test_name: TestChannelsOnlyForClaude
+  purpose: "Channels is claude-only \u2014 bash/codex/gemini sessions reject the field\
+    \ with a tool-specific error"
+  source: telegram-incident-2026-04-15
+  manual: false
+  run:
+    command: go test ./cmd/agent-deck/ -run TestChannelsOnlyForClaude -count=1 -timeout
+      90s -v
+    expected: pass
+- id: ch-support-e2e-manual
+  added: 2026-04-16
+  task: ch-support
+  file: "(manual \u2014 not in test harness)"
+  test_name: e2e-channel-roundtrip
+  purpose: 'End-to-end: create a session with --channel, restart, verify claude is
+    launched with --channels by inspecting the pane command'
+  source: telegram-incident-2026-04-15
+  manual: true
+  manual_steps: '1. agent-deck -p personal add --channel plugin:telegram@user/repo
+    -c claude -t chan-e2e --no-parent /tmp/chan-e2e
+
+    2. agent-deck -p personal session start chan-e2e
+
+    3. Wait for session to come online (ps -o args= <claude-pid> or tmux list-panes
+    of its tmux session)
+
+    4. Verify the claude command line contains "--channels plugin:telegram@user/repo"
+
+    5. agent-deck -p personal session restart chan-e2e
+
+    6. Re-verify the claude command line STILL contains --channels after restart (restart
+    must preserve)
+
+    7. Cleanup: agent-deck -p personal session stop chan-e2e && agent-deck -p personal
+    remove chan-e2e
+
+    '
+  run:
+    command: (manual)
+    expected: pass
+- id: ch-support-restart-preserves
+  added: '2026-04-16'
+  task: ch-support
+  file: internal/session/channels_test.go
+  test_name: TestResumeCommandAppendsChannels
+  purpose: 'Restart/resume path must also emit --channels. Phase 5 loopback regression:
+    before this test, buildClaudeResumeCommand hand-rolled its own flag assembly and
+    silently dropped --channels (and every other extra flag). Guards against flag-desync
+    between start/restart paths.'
+  source: phase-5-loopback-2026-04-16
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestResumeCommandAppendsChannels -count=1
+      -v
+    expected: pass

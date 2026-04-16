@@ -732,6 +732,7 @@ func reorderArgsForFlagParsing(args []string) []string {
 		"-m": true, "--message": true,
 		"-p": true, "--parent": true,
 		"--mcp":     true,
+		"--channel": true,
 		"--wrapper": true,
 		"-w":        true, "--worktree": true,
 		"--location":       true,
@@ -915,6 +916,15 @@ func handleAdd(profile string, args []string) {
 		return nil
 	})
 
+	// Plugin channel flag - can be specified multiple times; requires -c claude.
+	// Persisted on Instance.Channels and emitted as --channels <csv> on every
+	// claude Start/Restart so plugin channels deliver inbound messages.
+	var channelFlags []string
+	fs.Func("channel", "Plugin channel id (can specify multiple times); requires -c claude", func(s string) error {
+		channelFlags = append(channelFlags, s)
+		return nil
+	})
+
 	// Sandbox flags
 	sandbox := fs.Bool("sandbox", false, "Run session in Docker sandbox")
 	sandboxImage := fs.String("sandbox-image", "", "Docker image for sandbox (overrides config default)")
@@ -947,6 +957,7 @@ func handleAdd(profile string, args []string) {
 		fmt.Println("  agent-deck -p work add               # Add to 'work' profile")
 		fmt.Println("  agent-deck add -t \"Sub-task\" --parent \"Main Project\"  # Create sub-session")
 		fmt.Println("  agent-deck add -t \"Research\" -c claude --mcp memory --mcp sequential-thinking /tmp/x")
+		fmt.Println("  agent-deck add -t \"Bot\" -c claude --channel plugin:telegram@user/repo .  # subscribe to plugin channel")
 		fmt.Println("  agent-deck add -c opencode --wrapper \"nvim +'terminal {command}' +'startinsert'\" .")
 		fmt.Println("  agent-deck add -c \"codex --dangerously-bypass-approvals-and-sandbox\" .")
 		fmt.Println("  agent-deck add -c gemini --yolo .")
@@ -1227,6 +1238,15 @@ func handleAdd(profile string, args []string) {
 		newInstance.Command = sessionCommandResolved
 	}
 
+	// Apply --channel flags (claude only — channels is a Claude Code CLI flag).
+	if len(channelFlags) > 0 {
+		if newInstance.Tool != "claude" {
+			fmt.Println("Error: --channel only supported for claude sessions (use -c claude); requires --channels on the claude binary")
+			os.Exit(1)
+		}
+		newInstance.Channels = channelFlags
+	}
+
 	// Set wrapper if provided
 	if sessionWrapperResolved != "" {
 		newInstance.Wrapper = sessionWrapperResolved
@@ -1471,6 +1491,7 @@ func handleList(profile string, args []string) {
 			CreatedAt     time.Time `json:"created_at"`
 			SSHHost       string    `json:"ssh_host,omitempty"`
 			SSHRemotePath string    `json:"ssh_remote_path,omitempty"`
+			Channels      []string  `json:"channels,omitempty"`
 		}
 		sessions := make([]sessionJSON, len(instances))
 		for i, inst := range instances {
@@ -1487,6 +1508,7 @@ func handleList(profile string, args []string) {
 				CreatedAt:     inst.CreatedAt,
 				SSHHost:       inst.SSHHost,
 				SSHRemotePath: inst.SSHRemotePath,
+				Channels:      inst.Channels,
 			}
 			if tmuxSess := inst.GetTmuxSession(); tmuxSess != nil {
 				sj.TmuxSession = tmuxSess.Name
