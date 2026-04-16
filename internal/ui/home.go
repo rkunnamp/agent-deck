@@ -3879,7 +3879,19 @@ func (h *Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-enable mouse mode after returning from tea.Exec.
 		// tmux detach-client sends terminal reset sequences that disable mouse reporting,
 		// and Bubble Tea doesn't re-enable it automatically after exec returns.
-		return h, tea.EnableMouseCellMotion
+		//
+		// Also restore legacy keyboard mode. When the user attaches a tmux
+		// session that has `extended-keys on`, tmux activates modifyOtherKeys
+		// (and possibly the Kitty keyboard protocol) on the outer terminal.
+		// These settings persist after detach, so the outer terminal (e.g.
+		// Ghostty) keeps sending CSI u / modifyOtherKeys sequences that Bubble
+		// Tea v1.3.10 cannot parse, silently dropping shifted keys (capitals)
+		// on the dashboard. Re-call DisableKittyKeyboard to pop the Kitty
+		// stack and disable modifyOtherKeys, restoring legacy reporting.
+		return h, tea.Batch(tea.EnableMouseCellMotion, func() tea.Msg {
+			DisableKittyKeyboard(os.Stdout)
+			return nil
+		})
 
 	case previewDebounceMsg:
 		// PERFORMANCE: Debounce period elapsed - check if this fetch is still relevant
