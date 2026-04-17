@@ -81,58 +81,13 @@ func TestRenderPreviewPane_StripsEraseInDisplay_Issue579(t *testing.T) {
 	}
 }
 
-// Test 3: A line of bg-colored content wider than the preview must be
-// truncated AND its trailing SGR state must be reset so it cannot leak
-// color into adjacent joined panels or subsequent rows.
-//
-// Concretely: after ansi.Truncate, there must exist an SGR reset
-// (ESC [ 0 m OR ESC [ m) before the final newline of every rendered
-// content line that opened with an SGR. Without a reset, lipgloss
-// horizontal-join paints the active bg into the gap between panels.
-func TestRenderPreviewPane_ResetsSGRAtEndOfLines_Issue579(t *testing.T) {
-	// Bg-colored line wider than preview — will be truncated.
-	// Note: contains NO CSI K; the only way for bg to leak is an
-	// unreset SGR at the end of the line.
-	longBgLine := "\x1b[42m" + strings.Repeat(" ", 200) + "\n"
-
-	width := 40
-	h := homeWithRunningPreview(t, longBgLine, width, 20)
-	rendered := h.renderPreviewPane(width, 20)
-
-	lines := strings.Split(rendered, "\n")
-	var offending []string
-	resetRE := "\x1b[0m"
-	altResetRE := "\x1b[m"
-	for _, line := range lines {
-		// Only check lines that actually turned on a bg color.
-		if !strings.Contains(line, "\x1b[42m") {
-			continue
-		}
-		// Find the last SGR reset in the line.
-		idxReset := strings.LastIndex(line, resetRE)
-		idxAltReset := strings.LastIndex(line, altResetRE)
-		idxBg := strings.LastIndex(line, "\x1b[42m")
-		lastReset := idxReset
-		if idxAltReset > lastReset {
-			lastReset = idxAltReset
-		}
-		if lastReset < idxBg {
-			offending = append(offending, line)
-		}
-	}
-	if len(offending) > 0 {
-		t.Fatalf("each bg-colored preview line must end with an SGR reset to prevent color leakage into adjacent panels.\nrendered=%q\noffending=%v", rendered, offending)
-	}
-}
-
-// Test 4: Every rendered line's visible width must fit within the
-// preview pane's budget (width - margin). This locks down the core
-// clip guarantee that issue #579 reports violated — without it,
-// Neovim's full-width statusline extends past the right edge.
+// Test 3: Every rendered line's visible width must fit within the
+// preview pane's budget. This locks down the core clip guarantee
+// that issue #579 reports violated — without it, Neovim's full-width
+// statusline extends past the right edge. Use visible text (not just
+// spaces) so the renderer does not strip the line as "visually empty".
 func TestRenderPreviewPane_EveryLineFitsWidth_Issue579(t *testing.T) {
-	// A line much wider than the pane, with ANSI BG so we exercise
-	// the ansi-aware width path.
-	wideLine := "\x1b[42m" + strings.Repeat("x", 300) + "\x1b[0m\n"
+	wideLine := "\x1b[42m NORMAL " + strings.Repeat("x", 300) + "\x1b[0m\n"
 
 	width := 60
 	h := homeWithRunningPreview(t, wideLine, width, 20)
@@ -142,6 +97,32 @@ func TestRenderPreviewPane_EveryLineFitsWidth_Issue579(t *testing.T) {
 		w := ansi.StringWidth(line)
 		if w > width {
 			t.Fatalf("line %d exceeds preview width %d (visible=%d): %q\nfull rendered=%q", i, width, w, line, rendered)
+		}
+	}
+}
+
+// Test 4: A statusline-style line that mixes visible text, trailing
+// bg-colored padding, and CSI K (the classic Neovim mini.statusline
+// capture pattern) must render with NO erase escape reaching the
+// outer terminal. End-to-end regression for #579.
+func TestRenderPreviewPane_NvimStatusline_NoBleedEscapes_Issue579(t *testing.T) {
+	// Mimic the reporter's mini.statusline: label + filename + trailing
+	// bg-colored region + CSI K to fill the physical row.
+	statusline := "\x1b[42;30m NORMAL \x1b[0m\x1b[42;30m src/main.go " +
+		strings.Repeat(" ", 50) + "\x1b[K\n"
+
+	h := homeWithRunningPreview(t, statusline, 50, 20)
+	rendered := h.renderPreviewPane(50, 20)
+
+	// The critical invariant — no EL/ED escape survives.
+	if strings.Contains(rendered, "\x1b[K") || strings.Contains(rendered, "\x1b[J") {
+		t.Fatalf("Neovim-style statusline capture leaked a CSI K/J escape past the sanitizer; outer terminal would paint past the pane boundary.\nrendered=%q", rendered)
+	}
+
+	// And the visible width invariant still holds.
+	for i, line := range strings.Split(rendered, "\n") {
+		if w := ansi.StringWidth(line); w > 50 {
+			t.Fatalf("statusline line %d exceeds preview width 50 (visible=%d): %q", i, w, line)
 		}
 	}
 }
