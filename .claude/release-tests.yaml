@@ -626,3 +626,45 @@ tests:
     command: go test ./internal/ui/ -run TestFullRepaint_NonWheelMouseDoesNotClear_Issue607
       -count=1 -v
     expected: pass
+- id: issue-598-fresh-claude-id-over-stale
+  added: '2026-04-17'
+  task: fix-issue-598
+  file: internal/ui/send_output_content_test.go
+  test_name: TestGetSessionContentWithLive_PrefersFreshIDOverStoredStaleID
+  purpose: Cross-session `x` send-output must use the live CLAUDE_SESSION_ID
+    from tmux env, not a stale stored ClaudeSessionID. Reproduces the v1.7.10
+    bug where resumed sessions leaked prior-conversation JSONL content into
+    the target session.
+  source: .planning/fix-issue-598/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/ui/ -run TestGetSessionContentWithLive_PrefersFreshIDOverStoredStaleID
+      -race -count=1 -v
+    expected: pass
+- id: issue-598-keeps-stored-when-live-empty
+  added: '2026-04-17'
+  task: fix-issue-598
+  file: internal/ui/send_output_content_test.go
+  test_name: TestGetSessionContentWithLive_KeepsStoredIDWhenLiveEmpty
+  purpose: Back-compat — when tmux env has no live CLAUDE_SESSION_ID,
+    getSessionContent falls through to the stored ID. Prevents the refresh
+    path from clobbering valid state.
+  source: .planning/fix-issue-598/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/ui/ -run TestGetSessionContentWithLive_KeepsStoredIDWhenLiveEmpty
+      -race -count=1 -v
+    expected: pass
+- id: issue-598-refresh-nil-tmux-safe
+  added: '2026-04-17'
+  task: fix-issue-598
+  file: internal/session/instance_test.go
+  test_name: TestInstance_RefreshLiveSessionIDs_NoOpWhenTmuxSessionNil
+  purpose: RefreshLiveSessionIDs must be a safe no-op when tmuxSession is nil
+    so callers can invoke it unconditionally. Pins the safety contract.
+  source: .planning/fix-issue-598/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestInstance_RefreshLiveSessionIDs_NoOpWhenTmuxSessionNil
+      -race -count=1 -v
+    expected: pass

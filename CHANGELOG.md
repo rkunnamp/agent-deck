@@ -5,6 +5,11 @@ All notable changes to Agent Deck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.13] - 2026-04-17
+
+### Fixed
+- **Cross-session `x` send-output transferred unpredictable content** (issue [#598](https://github.com/asheshgoplani/agent-deck/issues/598)): when the user pressed `x` to transfer output from session A to session B, the transferred text was often from a *prior* conversation rather than the most-recent assistant response. Root cause: `getSessionContent` read the last assistant message via `Instance.ClaudeSessionID`, but that stored ID goes stale every time Claude is resumed — it continues pointing at the prior JSONL while the live `CLAUDE_SESSION_ID` in tmux env holds the current UUID. The CLI `session output` path already used `GetLastResponseBestEffort` with stale-ID recovery; the TUI path didn't. Fix adds `Instance.RefreshLiveSessionIDs()` (Claude + Gemini) and routes `getSessionContent` through a testable `getSessionContentWithLive(inst, liveID)` helper that prefers the live tmux env ID over any stored value before the JSONL lookup. Tmux scrollback fallback is unchanged. Tests: `TestGetSessionContentWithLive_PrefersFreshIDOverStoredStaleID`, `TestGetSessionContentWithLive_KeepsStoredIDWhenLiveEmpty`, `TestGetSessionContentWithLive_NoOpForNonClaudeTool` in `internal/ui/send_output_content_test.go`; `TestInstance_RefreshLiveSessionIDs_NoOpWhenTmuxSessionNil`, `TestInstance_RefreshLiveSessionIDs_NoOpForNonAgenticTool` in `internal/session/instance_test.go`.
+
 ## [1.7.10] - 2026-04-17
 
 ### Fixed
