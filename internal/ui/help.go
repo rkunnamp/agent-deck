@@ -150,6 +150,7 @@ func (h *HelpOverlay) View() string {
 	if cfg, _ := session.LoadUserConfig(); cfg != nil && !cfg.GetShowNotes() {
 		notesKey = ""
 	}
+	editPathsKey := h.key(hotkeyEditPaths, "p")
 	worktreeKey := h.key(hotkeyWorktreeFinish, "W")
 	watcherPanelKey := h.key(hotkeyWatcherPanel, "w")
 	groupKey := h.key(hotkeyCreateGroup, "g")
@@ -195,6 +196,7 @@ func (h *HelpOverlay) View() string {
 				{copyKey, "Copy output to clipboard"},
 				{sendKey, "Send output to session"},
 				{execShellKey, "Exec shell in sandbox container"},
+				{editPathsKey, "Edit multi-repo paths"},
 				{notesKey, "Edit notes"},
 			},
 		},
