@@ -4770,8 +4770,10 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Build generic toolOptionsJSON from tool-specific options
 		var toolOptionsJSON json.RawMessage
+		var claudeExtraArgs []string
 		if command == "claude" && claudeOpts != nil {
 			toolOptionsJSON, _ = session.MarshalToolOptions(claudeOpts)
+			claudeExtraArgs = h.newDialog.GetClaudeExtraArgs()
 		} else if command == "codex" {
 			yolo := h.newDialog.GetCodexYoloMode()
 			codexOpts := &session.CodexOptions{YoloMode: &yolo}
@@ -4785,7 +4787,7 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !worktreeEnabled {
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				h.newDialog.Hide()
-				h.confirmDialog.ShowCreateDirectory(path, name, command, groupPath, toolOptionsJSON, parentSessionID, parentProjectPath)
+				h.confirmDialog.ShowCreateDirectory(path, name, command, groupPath, toolOptionsJSON, claudeExtraArgs, parentSessionID, parentProjectPath)
 				return h, nil
 			}
 		}
@@ -4836,6 +4838,7 @@ func (h *Home) handleNewDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			geminiYoloMode,
 			sandboxMode,
 			toolOptionsJSON,
+			claudeExtraArgs,
 			multiRepoEnabled,
 			additionalPaths,
 			parentSessionID,
@@ -6236,7 +6239,7 @@ func (h *Home) confirmAction() tea.Cmd {
 
 // confirmCreateDirectory handles the "yes" action for ConfirmCreateDirectory.
 func (h *Home) confirmCreateDirectory() tea.Cmd {
-	name, path, command, groupPath, pendingToolOpts, parentSessionID, parentProjectPath := h.confirmDialog.GetPendingSession()
+	name, path, command, groupPath, pendingToolOpts, pendingExtraArgs, parentSessionID, parentProjectPath := h.confirmDialog.GetPendingSession()
 	h.confirmDialog.Hide()
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		h.setError(fmt.Errorf("failed to create directory: %w", err))
@@ -6253,6 +6256,7 @@ func (h *Home) confirmCreateDirectory() tea.Cmd {
 		false,
 		false,
 		pendingToolOpts,
+		pendingExtraArgs,
 		false,
 		nil,
 		parentSessionID,
@@ -7024,6 +7028,7 @@ func (h *Home) createSessionInGroupWithWorktreeAndOptions(
 	geminiYoloMode bool,
 	sandboxEnabled bool,
 	toolOptionsJSON json.RawMessage,
+	claudeExtraArgs []string,
 	multiRepoEnabled bool,
 	additionalPaths []string,
 	parentSessionID, parentProjectPath string,
@@ -7099,6 +7104,11 @@ func (h *Home) createSessionInGroupWithWorktreeAndOptions(
 		// Apply generic tool options (claude, codex, etc.)
 		if len(toolOptionsJSON) > 0 {
 			inst.ToolOptionsJSON = toolOptionsJSON
+		}
+
+		// Apply claude extra CLI tokens (claude-only, ignored for other tools).
+		if tool == "claude" && len(claudeExtraArgs) > 0 {
+			inst.ExtraArgs = claudeExtraArgs
 		}
 
 		// Apply sandbox config.
@@ -7355,6 +7365,7 @@ func (h *Home) quickCreateSession() tea.Cmd {
 		name, projectPath, command, groupPath,
 		"", "", "", // no worktree
 		geminiYoloMode, false, toolOptionsJSON,
+		nil,        // no extra claude args (recent-session path)
 		false, nil, // no multi-repo
 		"", "", // no parent
 		"", // no placeholder

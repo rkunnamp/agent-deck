@@ -737,10 +737,11 @@ func reorderArgsForFlagParsing(args []string) []string {
 		"-c": true, "--cmd": true,
 		"-m": true, "--message": true,
 		"-p": true, "--parent": true,
-		"--mcp":     true,
-		"--channel": true,
-		"--wrapper": true,
-		"-w":        true, "--worktree": true,
+		"--mcp":       true,
+		"--channel":   true,
+		"--extra-arg": true,
+		"--wrapper":   true,
+		"-w":          true, "--worktree": true,
 		"--location":       true,
 		"--resume-session": true,
 		"--sandbox-image":  true,
@@ -928,6 +929,17 @@ func handleAdd(profile string, args []string) {
 	var channelFlags []string
 	fs.Func("channel", "Plugin channel id (can specify multiple times); requires -c claude", func(s string) error {
 		channelFlags = append(channelFlags, s)
+		return nil
+	})
+
+	// Extra claude CLI tokens - repeatable; each invocation is one already-
+	// tokenised arg (e.g. --extra-arg --agent --extra-arg reviewer).
+	// Persisted on Instance.ExtraArgs (plaintext — do NOT pass secrets) and
+	// appended verbatim to every claude Start/Restart/Fork command via
+	// buildClaudeExtraFlags.
+	var extraArgFlags []string
+	fs.Func("extra-arg", "Extra claude CLI token (can specify multiple times); requires -c claude; persisted plaintext — no secrets", func(s string) error {
+		extraArgFlags = append(extraArgFlags, s)
 		return nil
 	})
 
@@ -1256,6 +1268,16 @@ func handleAdd(profile string, args []string) {
 		newInstance.Channels = channelFlags
 	}
 
+	// Apply --extra-arg flags (claude only for now — these are passed to the
+	// claude binary via buildClaudeExtraFlags; other tools have their own builders).
+	if len(extraArgFlags) > 0 {
+		if newInstance.Tool != "claude" {
+			fmt.Println("Error: --extra-arg only supported for claude sessions (use -c claude); claude is the only tool whose builder appends user extra args")
+			os.Exit(1)
+		}
+		newInstance.ExtraArgs = extraArgFlags
+	}
+
 	// Set wrapper if provided
 	if sessionWrapperResolved != "" {
 		newInstance.Wrapper = sessionWrapperResolved
@@ -1501,6 +1523,7 @@ func handleList(profile string, args []string) {
 			SSHHost       string    `json:"ssh_host,omitempty"`
 			SSHRemotePath string    `json:"ssh_remote_path,omitempty"`
 			Channels      []string  `json:"channels,omitempty"`
+			ExtraArgs     []string  `json:"extra_args,omitempty"`
 		}
 		// Warm tmux pane-title cache + load hook statuses so the CLI
 		// reports the same Status the TUI and /api/menu do (issue #610).
@@ -1521,6 +1544,7 @@ func handleList(profile string, args []string) {
 				SSHHost:       inst.SSHHost,
 				SSHRemotePath: inst.SSHRemotePath,
 				Channels:      inst.Channels,
+				ExtraArgs:     inst.ExtraArgs,
 			}
 			if tmuxSess := inst.GetTmuxSession(); tmuxSess != nil {
 				sj.TmuxSession = tmuxSess.Name

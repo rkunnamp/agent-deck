@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
+
 	"github.com/asheshgoplani/agent-deck/internal/docker"
 	"github.com/asheshgoplani/agent-deck/internal/logging"
 	"github.com/asheshgoplani/agent-deck/internal/send"
@@ -152,6 +154,12 @@ type Instance struct {
 	// no inbound delivery) which silently drops Telegram/Discord/Slack
 	// messages on conductor restart.
 	Channels []string `json:"channels,omitempty"`
+
+	// ExtraArgs are user-supplied claude CLI tokens appended verbatim to every
+	// start/resume/fork command (e.g. ["--agent","reviewer","--model","opus"]).
+	// Each token is shellescape-quoted on emission so values with spaces
+	// survive the bash -c wrapper.
+	ExtraArgs []string `json:"extra_args,omitempty"`
 
 	// ToolOptions stores tool-specific launch options (Claude, Codex, Gemini, etc.)
 	// JSON structure: {"tool": "claude", "options": {...}}
@@ -690,6 +698,14 @@ func (i *Instance) buildClaudeExtraFlags(opts *ClaudeOptions) string {
 	// on every Start/Restart/resume because every command-build flows here.
 	if len(i.Channels) > 0 {
 		flags = append(flags, fmt.Sprintf("--channels %s", strings.Join(i.Channels, ",")))
+	}
+
+	// User-supplied extra args: each token is shellescape-quoted before
+	// re-emission so values with spaces survive the `bash -c` wrapper
+	// without being re-tokenized. Appended last so user flags can override
+	// defaults claude accepts in last-wins ordering.
+	for _, tok := range i.ExtraArgs {
+		flags = append(flags, shellescape.Quote(tok))
 	}
 
 	if len(flags) == 0 {
