@@ -1035,6 +1035,19 @@ func handleSessionSet(profile string, args []string) {
 		"old_value": oldValue,
 		"new_value": value,
 	})
+
+	// v1.7.22: emit telegram topology warnings whenever the signals the
+	// validator cares about change (wrapper or channels). The silent-path
+	// case writes nothing — see ValidateTelegramTopology (#658).
+	if field == "wrapper" || field == "channels" {
+		cfgDir := session.GetClaudeConfigDirForGroup(inst.GroupPath)
+		globalTelegramEnabled, _ := readTelegramGloballyEnabled(cfgDir)
+		emitTelegramWarnings(os.Stderr, session.TelegramValidatorInput{
+			GlobalEnabled:   globalTelegramEnabled,
+			SessionChannels: inst.Channels,
+			SessionWrapper:  inst.Wrapper,
+		})
+	}
 }
 
 // loadSessionData loads storage and session data for a profile

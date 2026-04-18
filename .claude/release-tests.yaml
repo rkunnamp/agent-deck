@@ -927,3 +927,69 @@ tests:
   run:
     command: go test ./internal/session/ -run TestTmuxSettings_GetLaunchAs_UnknownValueReturnsEmpty -count=1 -v
     expected: pass
+- id: v1722-telegram-global-disabled-no-warning
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: internal/session/telegram_validator_test.go
+  test_name: TestTelegramValidator_GlobalDisabled_NoWarning
+  purpose: 'Silent path — when the profile is configured correctly the validator emits zero warnings, keeping logs clean. Locks the no-noise baseline so future guards do not accidentally warn on the supported topology.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestTelegramValidator_GlobalDisabled_NoWarning -count=1 -v
+    expected: pass
+- id: v1722-telegram-global-enabled-warn-antipattern
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: internal/session/telegram_validator_test.go
+  test_name: TestTelegramValidator_GlobalEnabled_OrdinarySession_WarnAntiPattern
+  purpose: 'Root-cause A — detect the profile-wide enablement of telegram@claude-plugins-official in settings.json, the anti-pattern that leaks a bun poller to every claude subprocess.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestTelegramValidator_GlobalEnabled_OrdinarySession_WarnAntiPattern -count=1 -v
+    expected: pass
+- id: v1722-telegram-double-load
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: internal/session/telegram_validator_test.go
+  test_name: TestTelegramValidator_GlobalEnabled_ConductorSession_WarnDoubleLoad
+  purpose: 'Root-cause B — detect the combined global+channels configuration that makes the plugin load twice in one claude process, producing Telegram 409 Conflict.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestTelegramValidator_GlobalEnabled_ConductorSession_WarnDoubleLoad -count=1 -v
+    expected: pass
+- id: v1722-telegram-wrapper-deprecated
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: internal/session/telegram_validator_test.go
+  test_name: TestTelegramValidator_WrapperStateDir_AntiPattern
+  purpose: 'Root-cause C — detect the wrapper-injected TELEGRAM_STATE_DIR anti-pattern and recommend the canonical env_file mechanism. Wrapper fails silently on the fresh-start path due to bash -c argv splitting.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./internal/session/ -run TestTelegramValidator_WrapperStateDir_AntiPattern -count=1 -v
+    expected: pass
+- id: v1722-telegram-settings-reader
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: cmd/agent-deck/conductor_cmd_telegram_test.go
+  test_name: TestReadTelegramGloballyEnabled_TrueWhenSettingsHasIt
+  purpose: 'CLI helper parses Claude Code settings.json defensively — missing file and missing key both map to false (safe baseline), explicit true surfaces the anti-pattern.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./cmd/agent-deck/ -run TestReadTelegramGloballyEnabled_ -count=1 -v
+    expected: pass
+- id: v1722-telegram-warn-formatting
+  added: '2026-04-18'
+  task: v1722-telegram-poller-stability
+  file: cmd/agent-deck/conductor_cmd_telegram_test.go
+  test_name: TestConductorSetup_WarnsOnGlobalTelegramEnabled
+  purpose: 'End-to-end CLI surface — the human-facing warning text includes the ⚠ prefix, the GLOBAL_ANTIPATTERN code or label, and the exact settings.json key so users can find and fix the setting.'
+  source: .planning/fix-v1722-telegram-poller-stability/PLAN.md
+  manual: false
+  run:
+    command: go test ./cmd/agent-deck/ -run "TestConductorSetup_WarnsOnGlobalTelegramEnabled|TestConductorSetup_RecommendsEnvFileOverWrapper|TestEmitTelegramWarnings_CleanConfig_Silent" -count=1 -v
+    expected: pass

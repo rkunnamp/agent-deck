@@ -457,6 +457,38 @@ Telegram's Bot API `getUpdates` is single-consumer per bot token. If N Claude se
 
 **Debug:** `pgrep -af "bun.*telegram" | wc -l` should return 1. Anything higher means a race. Kill extras: `pkill -f "bun.*telegram"` then restart only the intended session.
 
+### Telegram conductor topology (v1.7.22+)
+
+**Supported topology — enforce this on every conductor host:**
+
+- Telegram is activated **per-session** via `--channels plugin:telegram@claude-plugins-official`. This is the only supported activation path for a conductor bot.
+- `TELEGRAM_STATE_DIR` is injected **exclusively** via `[conductors.<name>.claude].env_file` in `~/.agent-deck/config.toml`. The env file sources deterministically on both fresh-start and `--resume` spawns.
+- One bot token = one channel-owning session. Never share tokens between sessions.
+- `enabledPlugins."telegram@claude-plugins-official"` in the profile `settings.json` must be **absent or false**. Global enablement makes every claude subprocess (including child agents) load the plugin.
+
+**Codified anti-patterns — agent-deck v1.7.22 emits warnings for these:**
+
+| Anti-pattern | Code | Why it breaks |
+|---|---|---|
+| `enabledPlugins."telegram@claude-plugins-official" = true` in profile settings | `GLOBAL_ANTIPATTERN` | Every claude process loads the plugin, including every child agent the conductor spawns. Each one starts a `bun telegram` poller. |
+| Global enablement **AND** `--channels plugin:telegram@...` on the same session | `DOUBLE_LOAD` | The plugin loads twice in one claude process. Two bun pollers race on one bot token and Telegram rejects with 409 Conflict. |
+| `session set wrapper "TELEGRAM_STATE_DIR=... {command}"` | `WRAPPER_DEPRECATED` | Works on the resume path; silently fails on fresh-start due to `bash -c` argv splitting. The env var never reaches claude, so the plugin falls back to the default state dir and two conductors collide. Use `env_file` instead. |
+| Relying on `.mcp.json` telegram entries for inbound delivery | — | `.mcp.json` loads the plugin as an MCP server (tool-use only). Inbound message → conversation-turn delivery requires `--channels`. |
+| Using the same bot token for multiple concurrent sessions | — | `getUpdates` is single-consumer per token. |
+| Assuming an empty `TELEGRAM_STATE_DIR` is fine | — | The plugin falls back to `~/.claude/channels/telegram/`; any DM approval there leaks across unrelated conductors. |
+
+**Verifying steady state (conductor host):**
+
+```bash
+pgrep -af 'bun.*telegram' | grep -v grep | wc -l   # expect: exactly one per conductor bot
+for PID in $(pgrep -f 'bun.*telegram.*start'); do
+  echo "PID=$PID TSD=$(tr '\0' '\n' < /proc/$PID/environ | grep ^TELEGRAM_STATE_DIR= | cut -d= -f2-)"
+done
+# Each PID must show a distinct TELEGRAM_STATE_DIR; collisions indicate env_file is not being sourced.
+```
+
+**When agent-deck emits a `⚠  GLOBAL_ANTIPATTERN` / `DOUBLE_LOAD` / `WRAPPER_DEPRECATED` warning**, the problem is in your topology, not in agent-deck. Fix the profile settings or the conductor env_file; the warning is a leading indicator of the 409-Conflict symptom that follows minutes-to-hours later.
+
 ## References
 
 - [cli-reference.md](references/cli-reference.md) - Complete CLI command reference
