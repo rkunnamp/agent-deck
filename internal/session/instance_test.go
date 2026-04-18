@@ -3307,6 +3307,56 @@ func TestInstance_UpdateHookStatus_RejectsBidirectionalFlap(t *testing.T) {
 	}
 }
 
+// TestInstance_BuildClaudeResumeCommand_AfterFlap_ResumesRichID is the
+// live-runtime-boundary pin for issue #661. It goes one hop further than
+// the unit-level UpdateHookStatus tests: after replaying the flap, the
+// instance's next restart command (as actually emitted into tmux
+// pane_start_command) must contain `--resume <rich-uuid>`, NOT the fresh
+// overwritten UUID. This is the exact boundary the travel conductor
+// regressed at — the symptom was "restart resumes near-empty session" not
+// "UpdateHookStatus bound wrong value", so the test must reach the command
+// layer to prove the user-visible fix.
+func TestInstance_BuildClaudeResumeCommand_AfterFlap_ResumesRichID(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(tmpHome, ".claude"))
+	ClearUserConfigCache()
+	t.Cleanup(ClearUserConfigCache)
+
+	projectPath := filepath.Join(tmpHome, "project")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	inst := NewInstanceWithTool("boundary-flap-resume", projectPath, "claude")
+
+	richID := "dd17cb25-efdc-42f4-aa32-03fd6577721d"  // from real log
+	freshID := "50fe72cc-1111-2222-3333-444455556666" // simulated post-restart
+	seedClaudeJSONL(t, inst, richID, 200, 1024)       // ~200KB
+	seedClaudeJSONL(t, inst, freshID, 1, 8)           // 1-record fresh
+	inst.ClaudeSessionID = richID
+
+	// Simulate the UserPromptSubmit flap that used to win pre-v1.7.23.
+	inst.UpdateHookStatus(&HookStatus{
+		Status:    "running",
+		SessionID: freshID,
+		Event:     "UserPromptSubmit",
+		UpdatedAt: time.Now(),
+	})
+
+	if inst.ClaudeSessionID != richID {
+		t.Fatalf("post-flap ClaudeSessionID = %q, want %q", inst.ClaudeSessionID, richID)
+	}
+
+	cmd := inst.buildClaudeResumeCommand()
+	if !strings.Contains(cmd, "--resume "+richID) {
+		t.Fatalf("buildClaudeResumeCommand = %q, want substring %q — next restart would resume the wrong session",
+			cmd, "--resume "+richID)
+	}
+	if strings.Contains(cmd, freshID) {
+		t.Fatalf("buildClaudeResumeCommand = %q, must NOT reference freshID %q", cmd, freshID)
+	}
+}
+
 func TestInstance_SetAcknowledgedFromShared_RunningIgnored(t *testing.T) {
 	inst := NewInstanceWithTool("ack-shared-running", "/tmp/test", "codex")
 	inst.Status = StatusRunning

@@ -2857,37 +2857,41 @@ func (i *Instance) UpdateHookStatus(status *HookStatus) {
 		if sessionID == i.ClaudeSessionID {
 			return
 		}
-		// Quality gate: only accept if the hook session has conversation data,
-		// OR if the current session ID is empty (first detection).
-		if i.ClaudeSessionID == "" || sessionHasConversationData(i, sessionID) {
-			action := "bind"
-			if i.ClaudeSessionID != "" {
-				action = "rebind"
-			}
-			sessionLog.Debug("claude_session_update_from_hook",
-				slog.String("old_id", i.ClaudeSessionID),
-				slog.String("new_id", sessionID),
-				slog.String("event", status.Event),
-			)
-			_ = WriteSessionIDLifecycleEvent(SessionIDLifecycleEvent{
-				InstanceID: i.ID, Tool: i.Tool, Action: action,
-				Source: hookSource, OldID: i.ClaudeSessionID, NewID: sessionID,
-				HookEvent: status.Event,
-			})
-			i.ClaudeSessionID = sessionID
-			i.ClaudeDetectedAt = time.Now()
-			i.hookSessionID = sessionID
-
-			if i.tmuxSession != nil && i.tmuxSession.Exists() {
-				_ = i.tmuxSession.SetEnvironment("CLAUDE_SESSION_ID", sessionID)
-			}
-		} else {
+		// Cold start — no session bound yet. Accept the first candidate
+		// unconditionally; there is nothing to protect.
+		if i.ClaudeSessionID == "" {
+			i.bindClaudeSessionFromHook(sessionID, hookSource, status.Event, "bind")
+			return
+		}
+		// v1.7.7 guard: candidate must have any conversation data at all.
+		if !sessionHasConversationData(i, sessionID) {
 			_ = WriteSessionIDLifecycleEvent(SessionIDLifecycleEvent{
 				InstanceID: i.ID, Tool: i.Tool, Action: "reject",
 				Source: hookSource, OldID: i.ClaudeSessionID, Candidate: sessionID,
 				HookEvent: status.Event, Reason: "candidate_has_no_conversation_data",
 			})
+			return
 		}
+		// v1.7.23 guard (issue #661): when BOTH current and candidate have
+		// data, the candidate must have strictly MORE content to win. This
+		// stops the UserPromptSubmit flap where a fresh 1-record jsonl
+		// overwrites a rich hundreds-of-KB historic jsonl on every restart.
+		// Byte size is a robust proxy for "how much history this session
+		// holds" — immune to record-count ties and faster than re-scanning
+		// the file.
+		if sessionHasConversationData(i, i.ClaudeSessionID) {
+			currentSize := sessionConversationByteSize(i, i.ClaudeSessionID)
+			candidateSize := sessionConversationByteSize(i, sessionID)
+			if candidateSize <= currentSize {
+				_ = WriteSessionIDLifecycleEvent(SessionIDLifecycleEvent{
+					InstanceID: i.ID, Tool: i.Tool, Action: "reject",
+					Source: hookSource, OldID: i.ClaudeSessionID, Candidate: sessionID,
+					HookEvent: status.Event, Reason: "candidate_has_less_conversation_data",
+				})
+				return
+			}
+		}
+		i.bindClaudeSessionFromHook(sessionID, hookSource, status.Event, "rebind")
 	case i.Tool == "codex":
 		if sessionID == i.CodexSessionID {
 			return
@@ -5151,6 +5155,78 @@ func geminiSessionHasConversationData(sessionID, projectPath string) bool {
 		return false
 	}
 	return len(payload.Messages) > 0
+}
+
+// sessionConversationByteSize returns the size in bytes of the Claude
+// session's jsonl file (or 0 if it cannot be located). Used as a robust
+// "how much history does this session hold" proxy when choosing between
+// two non-empty candidates during hook rebind — a 974KB historic jsonl
+// should always win over a fresh 1-record jsonl, regardless of whether
+// both pass the binary `sessionHasConversationData` check.
+//
+// Uses the PER-INSTANCE Claude config dir (same lookup as
+// sessionHasConversationData) so conductors with config_dir overrides
+// resolve correctly. Errors return 0 — this is a tiebreaker, not the
+// primary gate, so a missing file degrades gracefully to "candidate
+// doesn't appear larger, reject" rather than false-accepting.
+func sessionConversationByteSize(inst *Instance, sessionID string) int64 {
+	var configDir string
+	if inst != nil {
+		configDir = GetClaudeConfigDirForInstance(inst)
+	} else {
+		configDir = GetClaudeConfigDir()
+	}
+	if configDir == "" {
+		configDir = filepath.Join(os.Getenv("HOME"), ".claude")
+	}
+	projectPath := ""
+	if inst != nil {
+		projectPath = inst.ProjectPath
+	}
+	resolvedPath := projectPath
+	if resolved, err := filepath.EvalSymlinks(projectPath); err == nil {
+		resolvedPath = resolved
+	}
+	encodedPath := ConvertToClaudeDirName(resolvedPath)
+	if encodedPath == "" {
+		encodedPath = "-"
+	}
+	sessionFile := filepath.Join(configDir, "projects", encodedPath, sessionID+".jsonl")
+	if info, err := os.Stat(sessionFile); err == nil {
+		return info.Size()
+	}
+	if fallback := findSessionFileInAllProjects(inst, sessionID); fallback != "" {
+		if info, err := os.Stat(fallback); err == nil {
+			return info.Size()
+		}
+	}
+	return 0
+}
+
+// bindClaudeSessionFromHook performs the common bookkeeping when
+// UpdateHookStatus has decided a candidate session ID wins: log the
+// lifecycle event, update the in-memory instance fields, and propagate
+// the ID into the tmux environment so a future restart's
+// capture-resume pattern picks it up. `action` is "bind" (cold start)
+// or "rebind" (replacing an existing ID).
+func (i *Instance) bindClaudeSessionFromHook(sessionID, hookSource, hookEvent, action string) {
+	sessionLog.Debug("claude_session_update_from_hook",
+		slog.String("old_id", i.ClaudeSessionID),
+		slog.String("new_id", sessionID),
+		slog.String("event", hookEvent),
+	)
+	_ = WriteSessionIDLifecycleEvent(SessionIDLifecycleEvent{
+		InstanceID: i.ID, Tool: i.Tool, Action: action,
+		Source: hookSource, OldID: i.ClaudeSessionID, NewID: sessionID,
+		HookEvent: hookEvent,
+	})
+	i.ClaudeSessionID = sessionID
+	i.ClaudeDetectedAt = time.Now()
+	i.hookSessionID = sessionID
+
+	if i.tmuxSession != nil && i.tmuxSession.Exists() {
+		_ = i.tmuxSession.SetEnvironment("CLAUDE_SESSION_ID", sessionID)
+	}
 }
 
 // sessionHasConversationData checks if a Claude session file contains actual
