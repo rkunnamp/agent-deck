@@ -29,22 +29,35 @@
 ```
 Then ask: *"How do I set up MCP pooling?"*
 
-**Option 2: OpenCode** (has built-in Claude skill compatibility)
+For local development from this repo, you can symlink the Claude skill directly:
+```bash
+mkdir -p ~/.claude/skills
+ln -s /path/to/agent-deck/skills/agent-deck ~/.claude/skills/agent-deck
+```
+
+**Option 2: Codex Skill** (recommended for Codex users)
+```bash
+mkdir -p ~/.agents/skills
+ln -s /path/to/agent-deck/skills/agent-deck-codex ~/.agents/skills/agent-deck
+```
+Codex reads the skill from `~/.agents/skills/agent-deck`. On first background Claude launch,
+`launch-claude.sh` installs the managed Codex hook entries into `~/.codex/hooks.json`
+and enables `codex_hooks = true` in `~/.codex/config.toml`.
+
+**Option 3: OpenCode** (has built-in Claude skill compatibility)
 ```bash
 # Create skill directory
 mkdir -p ~/.claude/skills/agent-deck/references
 
 # Download skill and references
-curl -sL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/skills/agent-deck/SKILL.md \
-  > ~/.claude/skills/agent-deck/SKILL.md
+curl -sL https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/skills/agent-deck/SKILL.md   > ~/.claude/skills/agent-deck/SKILL.md
 for f in cli-reference config-reference tui-reference troubleshooting; do
-  curl -sL "https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/skills/agent-deck/references/${f}.md" \
-    > ~/.claude/skills/agent-deck/references/${f}.md
+  curl -sL "https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/skills/agent-deck/references/${f}.md"     > ~/.claude/skills/agent-deck/references/${f}.md
 done
 ```
 OpenCode will auto-discover the skill from `~/.claude/skills/`.
 
-**Option 3: Any LLM** (ChatGPT, Claude, Gemini, etc.)
+**Option 4: Any LLM** (ChatGPT, Claude, Gemini, etc.)
 ```
 Read https://raw.githubusercontent.com/asheshgoplani/agent-deck/main/llms-full.txt
 and answer: How do I fork a session?
