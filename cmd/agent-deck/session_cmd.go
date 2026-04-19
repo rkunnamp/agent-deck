@@ -1499,6 +1499,13 @@ func handleSessionSend(profile string, args []string) {
 		}
 	}
 
+	var previousResponseContent string
+	if *wait && !session.IsClaudeCompatible(inst.Tool) {
+		if previousResponse, prevErr := inst.GetLastResponseBestEffort(); prevErr == nil && previousResponse != nil {
+			previousResponseContent = previousResponse.Content
+		}
+	}
+
 	// Record send time before the actual send so we can verify output freshness.
 	// Captured early to avoid false negatives from clock skew.
 	sentAt := time.Now()
@@ -1515,7 +1522,7 @@ func handleSessionSend(profile string, args []string) {
 			os.Exit(1)
 		}
 	} else {
-		if err := sendWithRetry(tmuxSess, message, false); err != nil {
+		if err := sendWithRetry(tmuxSess, inst.Tool, message, false); err != nil {
 			out.Error(fmt.Sprintf("failed to send message: %v", err), ErrCodeInvalidOperation)
 			os.Exit(1)
 		}
@@ -1550,13 +1557,13 @@ func handleSessionSend(profile string, args []string) {
 		// Wait for the JSONL to contain a response newer than sentAt.
 		// The status check (waitForCompletion) detects the UI prompt reappearing,
 		// but the JSONL file may not be flushed yet — poll until it is.
-		response, err := waitForFreshOutput(inst, sentAt)
+		response, err := waitForFreshOutput(inst, sentAt, previousResponseContent)
 		if err != nil {
 			// Fallback: reload session from DB in case tmux env was also stale
 			// (e.g., /clear created a new session that TUI or hooks detected)
 			if _, freshInstances, _, loadErr := loadSessionData(profile); loadErr == nil {
 				if freshInst, _, _ := ResolveSession(sessionRef, freshInstances); freshInst != nil {
-					response, err = waitForFreshOutput(freshInst, sentAt)
+					response, err = waitForFreshOutput(freshInst, sentAt, previousResponseContent)
 				}
 			}
 		}
@@ -1575,8 +1582,8 @@ func handleSessionSend(profile string, args []string) {
 
 // sendWithRetry sends a message atomically and retries Enter if the agent
 // doesn't start processing within a reasonable time.
-func sendWithRetry(tmuxSess *tmux.Session, message string, skipVerify bool) error {
-	return sendWithRetryTarget(tmuxSess, message, skipVerify, sendRetryOptions{
+func sendWithRetry(tmuxSess *tmux.Session, tool, message string, skipVerify bool) error {
+	return sendWithRetryTarget(tmuxSess, tool, message, skipVerify, sendRetryOptions{
 		maxRetries: 50,
 		checkDelay: 300 * time.Millisecond,
 	})
@@ -1664,7 +1671,7 @@ func sendNoWait(target sendRetryTarget, tool, message string) error {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
-	return sendWithRetryTarget(target, message, false, noWaitSendOptions())
+	return sendWithRetryTarget(target, tool, message, false, noWaitSendOptions())
 }
 
 type sendRetryTarget interface {
@@ -1681,7 +1688,7 @@ type sendRetryOptions struct {
 	maxFullResends int // >0 overrides default (3); <0 disables Ctrl+C-then-resend; 0 uses default
 }
 
-func sendWithRetryTarget(target sendRetryTarget, message string, skipVerify bool, opts sendRetryOptions) error {
+func sendWithRetryTarget(target sendRetryTarget, tool, message string, skipVerify bool, opts sendRetryOptions) error {
 	if opts.maxRetries <= 0 {
 		opts.maxRetries = 1
 	}
@@ -1694,6 +1701,14 @@ func sendWithRetryTarget(target sendRetryTarget, message string, skipVerify bool
 	}
 
 	if skipVerify {
+		return nil
+	}
+
+	// Codex follow-up sends stay healthy when we submit exactly once. The
+	// generic verification loop below replays extra Enter presses to recover
+	// from Claude/Gemini startup races; live repros show that behavior makes
+	// a warm Codex session answer and then exit cleanly.
+	if tool == "codex" {
 		return nil
 	}
 
@@ -1875,13 +1890,17 @@ func waitForCompletion(checker statusChecker, timeout time.Duration) (string, er
 	defer cancel()
 
 	const pollInterval = 2 * time.Second
+	const initialGrace = 1 * time.Second
+	const stableNonActiveThreshold = 2
 
 	// Initial grace period: wait for the agent to start processing.
 	// sendWithRetry already checks for "active", but give a small buffer.
-	time.Sleep(1 * time.Second)
+	time.Sleep(initialGrace)
 
 	consecutiveErrors := 0
 	const maxConsecutiveErrors = 5
+	sawActive := false
+	stableNonActiveChecks := 0
 
 	for {
 		select {
@@ -1901,14 +1920,27 @@ func waitForCompletion(checker statusChecker, timeout time.Duration) (string, er
 		}
 		consecutiveErrors = 0
 
-		// "active" means still processing, keep waiting
+		// "active" means the agent has begun processing this turn.
 		if status == "active" {
+			sawActive = true
+			stableNonActiveChecks = 0
 			time.Sleep(pollInterval)
 			continue
 		}
 
-		// Any non-active status means the agent is done
-		return status, nil
+		if sawActive {
+			// We've seen the turn start; the first stable non-active status means done.
+			return status, nil
+		}
+
+		// Right after a send, some tools can report their pre-send waiting prompt for a
+		// poll or two before the new turn starts. Require repeated non-active polls
+		// before treating that as a completed response.
+		stableNonActiveChecks++
+		if stableNonActiveChecks >= stableNonActiveThreshold {
+			return status, nil
+		}
+		time.Sleep(pollInterval)
 	}
 }
 
@@ -1923,6 +1955,37 @@ type freshOutputConfig struct {
 // Only set from tests.
 var freshOutputTestConfig *freshOutputConfig
 
+func waitForChangedResponse(fetch func() (*session.ResponseOutput, error), previousContent string, timeout, pollInterval time.Duration) (*session.ResponseOutput, error) {
+	if previousContent == "" {
+		return fetch()
+	}
+	if pollInterval <= 0 {
+		pollInterval = 250 * time.Millisecond
+	}
+	deadline := time.Now().Add(timeout)
+	var lastResp *session.ResponseOutput
+
+	for {
+		resp, err := fetch()
+		if err == nil && resp != nil {
+			lastResp = resp
+			if resp.Content != previousContent {
+				return resp, nil
+			}
+		}
+
+		if time.Now().After(deadline) {
+			if lastResp != nil {
+				return lastResp, nil
+			}
+			break
+		}
+		time.Sleep(pollInterval)
+	}
+
+	return fetch()
+}
+
 // waitForFreshOutput polls the session's JSONL file until it contains an assistant
 // response with a timestamp not before sentAt (with a 250ms skew tolerance).
 // This bridges the gap between the UI prompt reappearing (detected by
@@ -1934,10 +1997,11 @@ var freshOutputTestConfig *freshOutputConfig
 //
 // Falls back to the best-effort response if the freshness timeout expires,
 // logging a warning to stderr so the caller knows the data may be stale.
-func waitForFreshOutput(inst *session.Instance, sentAt time.Time) (*session.ResponseOutput, error) {
-	// Non-Claude tools don't use JSONL timestamps — skip the freshness loop.
+func waitForFreshOutput(inst *session.Instance, sentAt time.Time, previousResponseContent string) (*session.ResponseOutput, error) {
+	// Non-Claude tools don't use JSONL timestamps. Instead, wait for a changed
+	// best-effort response so follow-up sends don't return the previous answer.
 	if !session.IsClaudeCompatible(inst.Tool) {
-		return inst.GetLastResponseBestEffort()
+		return waitForChangedResponse(inst.GetLastResponseBestEffort, previousResponseContent, 5*time.Second, 250*time.Millisecond)
 	}
 
 	pollInterval := 250 * time.Millisecond

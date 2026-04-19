@@ -20,6 +20,11 @@ import (
 // Bump this when adding migrations.
 const SchemaVersion = 5
 
+const (
+	openBusyTimeoutMillis = 5000
+	openPragmaMaxRetries  = 6
+)
+
 // StateDB wraps a SQLite database for session/group persistence.
 // Thread-safe for concurrent use from multiple goroutines within one process.
 // Multiple OS processes can safely read/write via WAL mode + busy timeout.
@@ -137,16 +142,18 @@ func Open(dbPath string) (*StateDB, error) {
 		return nil, fmt.Errorf("statedb: open: %w", err)
 	}
 
-	// WAL mode: allows concurrent readers while writing
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("statedb: wal mode: %w", err)
-	}
-
 	// Busy timeout: wait up to 5s if another process holds a lock
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", openBusyTimeoutMillis)); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("statedb: busy timeout: %w", err)
+	}
+
+	// If the DB is already in WAL mode, avoid re-setting it on every open.
+	// Repeated "PRAGMA journal_mode=WAL" calls can require a write lock and
+	// spuriously fail for read-only CLI commands under normal concurrent writes.
+	if err := ensureWALMode(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("statedb: wal mode: %w", err)
 	}
 
 	// Foreign keys (for future use)
@@ -156,6 +163,42 @@ func Open(dbPath string) (*StateDB, error) {
 	}
 
 	return &StateDB{db: db, pid: os.Getpid()}, nil
+}
+
+func ensureWALMode(db *sql.DB) error {
+	mode, err := queryPragmaStringWithRetry(db, "PRAGMA journal_mode")
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(mode, "wal") {
+		return nil
+	}
+
+	mode, err = queryPragmaStringWithRetry(db, "PRAGMA journal_mode=WAL")
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(mode, "wal") {
+		return fmt.Errorf("unexpected journal mode %q", mode)
+	}
+	return nil
+}
+
+func queryPragmaStringWithRetry(db *sql.DB, pragma string) (string, error) {
+	var value string
+	var lastErr error
+	for attempt := 0; attempt < openPragmaMaxRetries; attempt++ {
+		err := db.QueryRow(pragma).Scan(&value)
+		if err == nil {
+			return value, nil
+		}
+		lastErr = err
+		if !isSQLiteBusy(err) {
+			return "", err
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return "", lastErr
 }
 
 // Close checkpoints WAL and closes the database.

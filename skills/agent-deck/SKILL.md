@@ -44,7 +44,10 @@ agent-deck
 agent-deck add -t "Project" -c claude /path/to/project
 agent-deck session start "Project"
 
-# Send message and get output
+# Send message and wait for the next response
+agent-deck session send "Project" "Analyze this codebase" --wait -q
+
+# Fire-and-forget, then check later
 agent-deck session send "Project" "Analyze this codebase"
 agent-deck session output "Project"
 ```
@@ -56,7 +59,7 @@ agent-deck session output "Project"
 | `agent-deck` | Launch interactive TUI |
 | `agent-deck add -t "Name" -c claude /path` | Create session |
 | `agent-deck session start/stop/restart <name>` | Control session |
-| `agent-deck session send <name> "message"` | Send message |
+| `agent-deck session send <name> "message" [--wait -q]` | Send message; add `--wait -q` for immediate follow-up output |
 | `agent-deck session output <name>` | Get last response |
 | `agent-deck session current [-q\|--json]` | Auto-detect current session |
 | `agent-deck session fork <name>` | Fork Claude conversation |
@@ -78,7 +81,7 @@ agent-deck session output "Project"
 $SKILL_DIR/scripts/launch-subagent.sh "Title" "Prompt" [--mcp name] [--wait]
 ```
 
-The script auto-detects current session/profile and creates a child session.
+The script auto-detects the current session/profile when available and creates a child session. Outside agent-deck, it launches a standalone session in the current working directory instead of failing.
 
 ### Retrieval Modes
 
@@ -119,7 +122,8 @@ $SKILL_DIR/scripts/launch-subagent.sh "Consult Gemini" "Your question here" --to
 ```bash
 $SKILL_DIR/scripts/launch-subagent.sh "Title" "Prompt" \
   --tool codex|gemini \     # REQUIRED for non-Claude agents
-  --path /project/dir \     # Working directory (auto-inherits parent path if omitted)
+  --path /project/dir \     # Working directory (auto-inherits parent path; falls back to cwd)
+  --profile work \         # Optional profile override when outside a parent session
   --wait \                  # Block until response is ready
   --timeout 180 \           # Seconds to wait (default: 300)
   --mcp exa                 # Attach MCP servers (can repeat)
@@ -135,12 +139,49 @@ $SKILL_DIR/scripts/launch-subagent.sh "Title" "Prompt" \
 
 ### How It Works
 
-1. Script auto-detects current session and profile
-2. Creates a child session with the specified tool in the parent's project directory
-3. Waits for the tool to initialize (handles Codex approval prompts automatically)
-4. Sends the question/prompt
-5. With `--wait`: polls until the agent responds, then returns the full output
-6. Without `--wait`: returns immediately, check output later with `agent-deck session output "Title"`
+1. Script checks whether it is already running inside an agent-deck parent session
+2. If yes, it launches a linked child session in the parent project directory; otherwise it launches a standalone session in the current working directory
+3. Sends the initial question/prompt through `agent-deck launch ... -m`, which uses the built-in ready-state wait
+4. With `--wait`: polls `session show --json` until the agent reaches `waiting`, then returns the response
+5. Without `--wait`: returns immediately, check output later with `agent-deck session output "Title"`
+
+### Background Coding Tasks with Codex (Claude → Codex)
+
+**This is the expected way to delegate coding work from Claude to Codex.** When Claude needs Codex to implement, refactor, or review non-trivial code, launch it as a background sub-agent and wait for a notification — do not poll.
+
+Required pattern:
+
+- Use `--tool codex --wait` on `launch-subagent.sh` (or `--wait -q` on `session send` for follow-ups).
+- **Set `--timeout` to at least 1 hour** (`--timeout 3600` for the script, `--timeout 60m` for `session send`). Codex coding sessions routinely run 10–45+ minutes; a short timeout will abandon the response while Codex is still working.
+- Invoke via Bash with `run_in_background: true` so the harness fires a completion notification when Codex finishes — then read the output file.
+
+```bash
+# Delegate a coding task to Codex, notified on completion
+$SKILL_DIR/scripts/launch-subagent.sh "Codex Impl" "Implement <task>..." \
+  --tool codex --wait --timeout 3600
+# Invoke this Bash call with run_in_background: true
+
+# Follow-up coding instruction in the same Codex session
+agent-deck session send "Codex Impl" "Now add tests for edge cases." --wait -q --timeout 60m
+# Also run_in_background: true
+```
+
+Only drop below 1 hour when the task is clearly a quick question (not code work) — e.g. "explain this function" or "which approach do you prefer?". For anything that writes or changes code, default to 1 hour minimum.
+
+### Follow-Up Prompts
+
+For an existing Codex/Gemini/Claude consultation session, do not use `sleep` before reading output. Use `session send ... --wait -q` when you want the next reply immediately.
+
+```bash
+# Best for immediate follow-up response
+agent-deck session send "Codex Review" "Now focus only on the migration logic." --wait -q --timeout 120s
+
+# Fire-and-forget follow-up, check later
+agent-deck session send "Codex Review" "Now focus only on the migration logic."
+agent-deck session output "Codex Review"
+```
+
+`session send --timeout` uses Go duration syntax such as `120s` or `2m`. This is different from `launch-subagent.sh --timeout`, which takes integer seconds.
 
 ### Examples
 

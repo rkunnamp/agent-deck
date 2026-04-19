@@ -1,6 +1,7 @@
 package statedb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,49 @@ func TestOpenClose(t *testing.T) {
 	if rows[0].ID != "test-1" || rows[0].Title != "Test" {
 		t.Errorf("Unexpected data: %+v", rows[0])
 	}
+}
+
+func TestOpen_WALAlreadyEnabledDoesNotRequireWriteLock(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+
+	// Initialize the DB once so the file is already in WAL mode.
+	initDB, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("initial Open: %v", err)
+	}
+	if err := initDB.Migrate(); err != nil {
+		t.Fatalf("initial Migrate: %v", err)
+	}
+	if err := initDB.Close(); err != nil {
+		t.Fatalf("initial Close: %v", err)
+	}
+
+	lockerDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open locker db: %v", err)
+	}
+	defer lockerDB.Close()
+
+	conn, err := lockerDB.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("locker Conn: %v", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(context.Background(), "BEGIN IMMEDIATE"); err != nil {
+		t.Fatalf("BEGIN IMMEDIATE: %v", err)
+	}
+	defer func() {
+		if _, err := conn.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+			t.Fatalf("ROLLBACK: %v", err)
+		}
+	}()
+
+	openedDB, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open while write lock held: %v", err)
+	}
+	defer openedDB.Close()
 }
 
 func TestSaveLoadInstances(t *testing.T) {

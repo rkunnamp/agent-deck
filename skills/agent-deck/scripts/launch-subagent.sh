@@ -1,12 +1,13 @@
 #!/bin/bash
-# launch-subagent.sh - Launch a sub-agent as child of current session
+# launch-subagent.sh - Launch a sub-agent, optionally linked to current session
 #
 # Usage: launch-subagent.sh "Title" "Prompt" [options]
 #
 # Options:
 #   --mcp <name>     Attach MCP (can repeat)
+#   --profile <name> Use the given agent-deck profile (default: current/default)
 #   --tool <type>    Agent tool: claude, codex, gemini (default: claude)
-#   --path <dir>     Working directory for the agent (default: /tmp/<title>)
+#   --path <dir>     Working directory for the agent (default: parent path or cwd)
 #   --wait           Poll until complete, return output
 #   --timeout <sec>  Wait timeout (default: 300)
 #
@@ -17,9 +18,8 @@
 #   launch-subagent.sh "Consult" "Review this approach" --tool codex --wait
 #   launch-subagent.sh "Review" "Review the session_cmd.go" --tool codex --path /path/to/project --wait
 
-set -e
+set -euo pipefail
 
-# Parse arguments
 TITLE=""
 PROMPT=""
 TOOL="claude"
@@ -27,11 +27,16 @@ WORK_PATH=""
 MCPS=()
 WAIT=false
 TIMEOUT=300
+PROFILE_OVERRIDE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --mcp)
             MCPS+=("$2")
+            shift 2
+            ;;
+        --profile)
+            PROFILE_OVERRIDE="$2"
             shift 2
             ;;
         --tool)
@@ -62,82 +67,155 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$TITLE" ] || [ -z "$PROMPT" ]; then
-    echo "Usage: launch-subagent.sh \"Title\" \"Prompt\" [--tool codex] [--path /dir] [--mcp name] [--wait]" >&2
+    echo 'Usage: launch-subagent.sh "Title" "Prompt" [--tool codex] [--path /dir] [--profile name] [--mcp name] [--wait]' >&2
     exit 1
 fi
 
-# Detect current session (filter out log lines starting with year)
-CURRENT_JSON=$(agent-deck session current --json 2>/dev/null | grep -v '^20')
-PARENT=$(echo "$CURRENT_JSON" | jq -r '.session')
-PROFILE=$(echo "$CURRENT_JSON" | jq -r '.profile')
-PARENT_PATH=$(echo "$CURRENT_JSON" | jq -r '.path')
+CURRENT_JSON="$(agent-deck session current --json 2>/dev/null || true)"
+PARENT=""
+PARENT_PATH=""
+PROFILE=""
+HAS_PARENT=false
 
-if [ -z "$PARENT" ] || [ "$PARENT" = "null" ]; then
-    echo "Error: Not in an agent-deck session" >&2
-    exit 1
+if [ -n "$CURRENT_JSON" ]; then
+    CURRENT_SESSION=$(printf '%s\n' "$CURRENT_JSON" | jq -r '.session // empty' 2>/dev/null || true)
+    CURRENT_PATH=$(printf '%s\n' "$CURRENT_JSON" | jq -r '.path // empty' 2>/dev/null || true)
+    CURRENT_PROFILE=$(printf '%s\n' "$CURRENT_JSON" | jq -r '.profile // empty' 2>/dev/null || true)
+    if [ -n "$CURRENT_SESSION" ]; then
+        HAS_PARENT=true
+        PARENT="$CURRENT_SESSION"
+        PARENT_PATH="$CURRENT_PATH"
+        PROFILE="$CURRENT_PROFILE"
+    fi
 fi
 
-# Determine work directory: --path flag > parent session path > /tmp fallback
+if [ -n "$PROFILE_OVERRIDE" ]; then
+    PROFILE="$PROFILE_OVERRIDE"
+fi
+
+PROFILE_ARGS=()
+if [ -n "$PROFILE" ]; then
+    PROFILE_ARGS=(-p "$PROFILE")
+fi
+AGENT_DECK_CMD=(agent-deck "${PROFILE_ARGS[@]}")
+
 if [ -n "$WORK_PATH" ]; then
     WORK_DIR="$WORK_PATH"
 elif [ -n "$PARENT_PATH" ] && [ "$PARENT_PATH" != "null" ]; then
     WORK_DIR="$PARENT_PATH"
 else
-    SAFE_TITLE=$(echo "$TITLE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-')
-    WORK_DIR="/tmp/${SAFE_TITLE}"
+    WORK_DIR="$(pwd)"
 fi
 mkdir -p "$WORK_DIR"
 
-# Launch session and send initial prompt in one command
-LAUNCH_CMD=(agent-deck -p "$PROFILE" launch "$WORK_DIR" -t "$TITLE" --parent "$PARENT" -c "$TOOL" -m "$PROMPT")
+print_response() {
+    local tmux_session="$1"
+    local output_cmd=("${AGENT_DECK_CMD[@]}" session output "$TITLE" -q)
+    local attempt
+    local output
+
+    for attempt in 1 2 3 4 5; do
+        if output="$("${output_cmd[@]}" 2>/dev/null)"; then
+            printf '%s\n' "$output"
+            return 0
+        fi
+        sleep 1
+    done
+
+    if [ -n "$tmux_session" ] && tmux has-session -t "$tmux_session" 2>/dev/null; then
+        tmux capture-pane -t "$tmux_session" -p -S - 2>/dev/null
+        return 0
+    fi
+
+    return 1
+}
+
+LAUNCH_CMD=("${AGENT_DECK_CMD[@]}" launch "$WORK_DIR" -t "$TITLE" -c "$TOOL" -m "$PROMPT")
+if [ "$HAS_PARENT" = "true" ]; then
+    LAUNCH_CMD+=(--parent "$PARENT")
+else
+    LAUNCH_CMD+=(--no-parent)
+fi
 for mcp in "${MCPS[@]}"; do
     LAUNCH_CMD+=(--mcp "$mcp")
 done
 "${LAUNCH_CMD[@]}"
 
-# Get tmux session name (used for optional --wait fallback capture)
-TMUX_SESSION=$(agent-deck -p "$PROFILE" session show "$TITLE" 2>/dev/null | grep '^Tmux:' | awk '{print $2}')
+SESSION_JSON="$("${AGENT_DECK_CMD[@]}" session show "$TITLE" --json 2>/dev/null || true)"
+TMUX_SESSION="$(printf '%s\n' "$SESSION_JSON" | jq -r '.tmux_session // empty' 2>/dev/null || true)"
+
+OUTPUT_HINT='agent-deck '
+if [ -n "$PROFILE" ]; then
+    OUTPUT_HINT+="-p $PROFILE "
+fi
+OUTPUT_HINT+="session output \"$TITLE\""
 
 echo ""
 echo "Sub-agent launched:"
 echo "  Title:   $TITLE"
 echo "  Tool:    $TOOL"
-echo "  Parent:  $PARENT"
-echo "  Profile: $PROFILE"
+if [ "$HAS_PARENT" = "true" ]; then
+    echo "  Mode:    child session"
+    echo "  Parent:  $PARENT"
+else
+    echo "  Mode:    standalone session"
+fi
+if [ -n "$PROFILE" ]; then
+    echo "  Profile: $PROFILE"
+else
+    echo "  Profile: default"
+fi
 echo "  Path:    $WORK_DIR"
 if [ ${#MCPS[@]} -gt 0 ]; then
     echo "  MCPs:    ${MCPS[*]}"
 fi
 echo ""
-echo "Check output with: agent-deck session output \"$TITLE\""
+echo "Check output with: $OUTPUT_HINT"
 
-# If --wait, poll until complete
 if [ "$WAIT" = "true" ]; then
     echo ""
     echo "Waiting for completion (timeout: ${TIMEOUT}s)..."
 
     START_TIME=$(date +%s)
     while true; do
-        STATUS=$(agent-deck -p "$PROFILE" session show "$TITLE" 2>/dev/null | grep '^Status:' | awk '{print $2}')
+        SESSION_JSON="$("${AGENT_DECK_CMD[@]}" session show "$TITLE" --json 2>/dev/null || true)"
+        STATUS="$(printf '%s\n' "$SESSION_JSON" | jq -r '.status // empty' 2>/dev/null || true)"
+        if [ -z "$TMUX_SESSION" ]; then
+            TMUX_SESSION="$(printf '%s\n' "$SESSION_JSON" | jq -r '.tmux_session // empty' 2>/dev/null || true)"
+        fi
 
-        if [ "$STATUS" = "◐" ] || [ "$STATUS" = "waiting" ]; then
+        if [ "$STATUS" = "waiting" ]; then
             echo "Complete!"
             echo ""
             echo "=== Response ==="
-            # Try native output first, fall back to full scrollback capture
-            if ! agent-deck -p "$PROFILE" session output "$TITLE" 2>/dev/null; then
-                tmux capture-pane -t "$TMUX_SESSION" -p -S - 2>/dev/null
+            if ! print_response "$TMUX_SESSION"; then
+                echo "Failed to retrieve session output for \"$TITLE\"" >&2
+                exit 1
             fi
             exit 0
         fi
 
-        ELAPSED=$(($(date +%s) - START_TIME))
-        if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "Timeout after ${TIMEOUT}s (session still running)" >&2
-            echo "Check later with: agent-deck session output \"$TITLE\""
+        if [ "$STATUS" = "error" ]; then
+            echo "Session entered error state before producing a response." >&2
+            if [ -n "$TMUX_SESSION" ] && tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+                echo "" >&2
+                echo "=== Session Pane ===" >&2
+                tmux capture-pane -t "$TMUX_SESSION" -p -S - 2>/dev/null >&2 || true
+            fi
             exit 1
         fi
 
-        sleep 5
+        ELAPSED=$(($(date +%s) - START_TIME))
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "Timeout after ${TIMEOUT}s (session still running)" >&2
+            echo "Check later with: $OUTPUT_HINT" >&2
+            exit 1
+        fi
+
+        if [ "$ELAPSED" -lt 30 ]; then
+            sleep 2
+        else
+            sleep 5
+        fi
     done
 fi

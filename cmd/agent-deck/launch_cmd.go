@@ -398,7 +398,7 @@ func handleLaunch(profile string, args []string) {
 	if initialMessage != "" && *noWait {
 		tmuxSess := newInstance.GetTmuxSession()
 		if tmuxSess != nil {
-			if err := sendWithRetryTarget(tmuxSess, initialMessage, false, sendRetryOptions{
+			if err := sendWithRetryTarget(tmuxSess, newInstance.Tool, initialMessage, false, sendRetryOptions{
 				maxRetries: 8,
 				checkDelay: 150 * time.Millisecond,
 			}); err != nil {

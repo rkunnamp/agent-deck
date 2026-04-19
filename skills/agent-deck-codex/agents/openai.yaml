@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent Deck"
+  short_description: "Launch and manage Claude Code agents in the background"
+
+policy:
+  allow_implicit_invocation: true

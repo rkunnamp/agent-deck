@@ -151,6 +151,33 @@ func TestWaitForCompletion_Timeout(t *testing.T) {
 	}
 }
 
+func TestWaitForChangedResponse_WaitsForDifferentContent(t *testing.T) {
+	responses := []*session.ResponseOutput{
+		{Tool: "codex", Role: "assistant", Content: "144"},
+		{Tool: "codex", Role: "assistant", Content: "144"},
+		{Tool: "codex", Role: "assistant", Content: "36"},
+	}
+	var idx atomic.Int32
+	fetch := func() (*session.ResponseOutput, error) {
+		i := int(idx.Add(1) - 1)
+		if i >= len(responses) {
+			i = len(responses) - 1
+		}
+		return responses[i], nil
+	}
+
+	resp, err := waitForChangedResponse(fetch, "144", 200*time.Millisecond, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.Content != "36" {
+		t.Fatalf("expected updated response content %q, got %q", "36", resp.Content)
+	}
+}
+
 type mockSendRetryTarget struct {
 	sendKeysErr error
 	statuses    []string
@@ -216,7 +243,7 @@ func TestSendWithRetryTarget_SkipVerify(t *testing.T) {
 		statuses: []string{"waiting"},
 		panes:    []string{""},
 	}
-	err := sendWithRetryTarget(mock, "hello", true, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", true, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,12 +252,32 @@ func TestSendWithRetryTarget_SkipVerify(t *testing.T) {
 	}
 }
 
+func TestSendWithRetryTarget_CodexSkipsVerificationLoop(t *testing.T) {
+	mock := &mockSendRetryTarget{
+		statuses: []string{"waiting", "waiting", "waiting"},
+		panes:    []string{"", "", ""},
+	}
+	err := sendWithRetryTarget(mock, "codex", "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := atomic.LoadInt32(&mock.sendKeysCalls); got != 1 {
+		t.Fatalf("expected 1 SendKeysAndEnter call for codex, got %d", got)
+	}
+	if got := atomic.LoadInt32(&mock.sendEnterCalls); got != 0 {
+		t.Fatalf("expected 0 SendEnter calls for codex, got %d", got)
+	}
+	if got := atomic.LoadInt32(&mock.sendCtrlCCalls); got != 0 {
+		t.Fatalf("expected 0 SendCtrlC calls for codex, got %d", got)
+	}
+}
+
 func TestSendWithRetryTarget_StopsWhenActive(t *testing.T) {
 	mock := &mockSendRetryTarget{
 		statuses: []string{"active"},
 		panes:    []string{""},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +291,7 @@ func TestSendWithRetryTarget_WaitingWithoutPasteMarkerReturnsSuccess(t *testing.
 		statuses: []string{"waiting", "waiting", "waiting", "waiting"},
 		panes:    []string{"", "", "", ""},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,7 +312,7 @@ func TestSendWithRetryTarget_RetriesOnUnsentPasteMarker(t *testing.T) {
 			"[Pasted text #1 +89 lines]",
 		},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +330,7 @@ func TestSendWithRetryTarget_DetectsPasteMarkerAfterInitialWaiting(t *testing.T)
 			"",
 		},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -302,7 +349,7 @@ func TestSendWithRetryTarget_RetriesWhenComposerPromptStillHasMessage(t *testing
 			"",
 		},
 	}
-	err := sendWithRetryTarget(mock, "Write one line: LAUNCH_OK", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "Write one line: LAUNCH_OK", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -320,7 +367,7 @@ func TestSendWithRetryTarget_RetriesWhenWrappedComposerPromptStillHasMessage(t *
 		},
 	}
 	message := "Read these 3 files and produce a summary for DIAGTOKEN_123. Keep under 80 lines."
-	err := sendWithRetryTarget(mock, message, false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", message, false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -334,7 +381,7 @@ func TestSendWithRetryTarget_AmbiguousStateUsesLimitedFallbackRetries(t *testing
 		statuses: []string{"error", "error", "error", "error"},
 		panes:    []string{"", "", "", ""},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 4, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -348,7 +395,7 @@ func TestSendWithRetryTarget_ReturnsErrorWhenInitialSendFails(t *testing.T) {
 	mock := &mockSendRetryTarget{
 		sendKeysErr: fmt.Errorf("tmux send failed"),
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 3, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 3, checkDelay: 0})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -367,7 +414,7 @@ func TestSendWithRetryTarget_AggressiveEarlyEnterNudge(t *testing.T) {
 		},
 		panes: []string{"", "", "", "", "", "", "", "", "", ""},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 10, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 10, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -388,7 +435,7 @@ func TestSendWithRetryTarget_IncreasedAmbiguousBudget(t *testing.T) {
 		statuses: []string{"error", "error", "error", "error", "error"},
 		panes:    []string{"", "", "", "", ""},
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 5, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -418,7 +465,7 @@ func TestSendWithRetryTarget_FullResendAfterMessageLost(t *testing.T) {
 		statuses: statuses,
 		panes:    panes,
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: 12, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: 12, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -446,7 +493,7 @@ func TestSendWithRetryTarget_FullResendMaxLimit(t *testing.T) {
 		statuses: statuses,
 		panes:    panes,
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{maxRetries: n, checkDelay: 0})
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{maxRetries: n, checkDelay: 0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -607,7 +654,7 @@ func TestSendWithRetryTarget_NoWaitDoesNotResend(t *testing.T) {
 		statuses: statuses,
 		panes:    panes,
 	}
-	err := sendWithRetryTarget(mock, "hello", false, sendRetryOptions{
+	err := sendWithRetryTarget(mock, "", "hello", false, sendRetryOptions{
 		maxRetries:     n,
 		checkDelay:     0,
 		maxFullResends: -1, // disabled, as used by --no-wait
@@ -694,7 +741,7 @@ func TestSendWithRetry_DelayedInputHandler_Integration(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	message := "DELAYED_HANDLER_TEST_MSG"
-	err := sendWithRetry(sess, message, false)
+	err := sendWithRetry(sess, "", message, false)
 	if err != nil {
 		t.Fatalf("sendWithRetry failed: %v", err)
 	}
@@ -920,7 +967,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 			writeClaudeJSONL(t, projectsDir, sessionID, "new question", "new answer", newTimestamp)
 		}()
 
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -943,7 +990,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 		// sentAt is well after the only response — freshness poll will time out
 		sentAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		if err != nil {
 			t.Fatalf("should not error even on timeout, got: %v", err)
 		}
@@ -966,7 +1013,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 		sentAt := time.Date(2026, 6, 1, 11, 0, 0, 0, time.UTC) // 1 hour before response
 
 		start := time.Now()
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		elapsed := time.Since(start)
 
 		if err != nil {
@@ -994,7 +1041,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 		// because the timestamp (whole-second) is only 0ms "before" sentAt.
 		sentAt := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1015,7 +1062,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 
 		sentAt := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		if err != nil {
 			t.Fatalf("should not error even on timeout, got: %v", err)
 		}
@@ -1032,7 +1079,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 		inst.Tool = "codex"
 
 		start := time.Now()
-		resp, err := waitForFreshOutput(inst, time.Now())
+		resp, err := waitForFreshOutput(inst, time.Now(), "")
 		elapsed := time.Since(start)
 
 		// Codex path goes straight to GetLastResponseBestEffort, no polling
@@ -1056,7 +1103,7 @@ func TestWaitForFreshOutput_ReturnsNewResponse(t *testing.T) {
 
 		sentAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-		resp, err := waitForFreshOutput(inst, sentAt)
+		resp, err := waitForFreshOutput(inst, sentAt, "")
 		if err != nil {
 			t.Fatalf("should not error, got: %v", err)
 		}

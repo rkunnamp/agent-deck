@@ -3974,10 +3974,119 @@ func parseGeminiOutput(content string) (*ResponseOutput, error) {
 	}, nil
 }
 
-// parseCodexOutput parses OpenAI Codex CLI output
+// parseCodexOutput parses OpenAI Codex CLI output.
+//
+// Codex renders completed assistant messages above a waiting prompt that looks
+// like `› suggested next action`, often followed by a status line. The generic
+// parser treated that trailing prompt as part of the response. For Codex we
+// instead trim the trailing prompt block, then extract the last assistant block.
 func parseCodexOutput(content string) (*ResponseOutput, error) {
-	// Codex has similar structure - adapt as needed
-	return parseGenericOutput(content, "codex")
+	content = tmux.StripANSI(content)
+	lines := strings.Split(content, "\n")
+
+	end := trimTrailingBlankLines(lines, len(lines))
+	if end == 0 {
+		return nil, fmt.Errorf("no response found in Codex output")
+	}
+
+	// When Codex is waiting, the pane ends with a prompt line like
+	// `› Summarize recent commits` followed by a status line. Drop that idle UI.
+	for idx := end - 1; idx >= 0; idx-- {
+		trimmed := strings.TrimSpace(lines[idx])
+		if trimmed == "" {
+			continue
+		}
+		if isCodexPromptLine(trimmed) {
+			end = trimTrailingBlankLines(lines, idx)
+			break
+		}
+	}
+	if end == 0 {
+		return nil, fmt.Errorf("no response found in Codex output")
+	}
+
+	start := -1
+	for idx := end - 1; idx >= 0; idx-- {
+		if isCodexAssistantStartLine(strings.TrimSpace(lines[idx])) {
+			start = idx
+			break
+		}
+	}
+	if start >= 0 {
+		response := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+		response = trimCodexAssistantPrefix(response)
+		if response == "" {
+			return nil, fmt.Errorf("no response found in Codex output")
+		}
+		return &ResponseOutput{Tool: "codex", Role: "assistant", Content: response}, nil
+	}
+
+	// Fallback: collect the last block of text above the previous prompt.
+	start = end - 1
+	for start >= 0 {
+		trimmed := strings.TrimSpace(lines[start])
+		if trimmed == "" {
+			start--
+			continue
+		}
+		if isCodexPromptLine(trimmed) {
+			start++
+			break
+		}
+		start--
+	}
+	if start < 0 {
+		start = 0
+	}
+
+	response := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+	response = trimCodexAssistantPrefix(response)
+	if response == "" {
+		return nil, fmt.Errorf("no response found in Codex output")
+	}
+
+	return &ResponseOutput{Tool: "codex", Role: "assistant", Content: response}, nil
+}
+
+func trimTrailingBlankLines(lines []string, end int) int {
+	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return end
+}
+
+func isCodexPromptLine(trimmed string) bool {
+	if trimmed == "›" || strings.HasPrefix(trimmed, "› ") {
+		return true
+	}
+	if trimmed == "codex>" || strings.HasPrefix(trimmed, "codex>") {
+		return true
+	}
+	if strings.EqualFold(trimmed, "Continue?") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "How can I help") {
+		return true
+	}
+	return false
+}
+
+func isCodexAssistantStartLine(trimmed string) bool {
+	return trimmed == "•" || strings.HasPrefix(trimmed, "• ")
+}
+
+func trimCodexAssistantPrefix(response string) string {
+	response = strings.TrimSpace(response)
+	if response == "•" {
+		return ""
+	}
+	if strings.HasPrefix(response, "• ") {
+		return strings.TrimSpace(strings.TrimPrefix(response, "• "))
+	}
+	if strings.HasPrefix(response, "•\n") {
+		return strings.TrimSpace(strings.TrimPrefix(response, "•"))
+	}
+	return response
 }
 
 // parseGenericOutput is a fallback parser for unknown tools
